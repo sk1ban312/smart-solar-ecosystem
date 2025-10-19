@@ -3,3 +3,4 @@ firebase-admin
 requests
 openai
 gunicorn
+Flask-Cors
