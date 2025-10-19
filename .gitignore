@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+.venv
+
+# Firebase Secrets - DO NOT COMMIT TO GIT
+backend-api/secrets/firebase-service-key.json
+
+# Node/JavaScript (Frontend)
+node_modules
+.next
