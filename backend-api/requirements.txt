@@ -1,6 +1,6 @@
 flask
 firebase-admin
 requests
-openai
+openai==0.28
 gunicorn
 Flask-Cors
