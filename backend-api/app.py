@@ -1,5 +1,5 @@
 # =================================================================
-# PYTHON FLASK API - V7.0 - FINAL SMART AI
+# PYTHON FLASK API - V8.0 - FINAL ROBUST VERSION
 # =================================================================
 from flask import Flask, jsonify
 from flask_cors import CORS
@@ -26,7 +26,7 @@ logging.info("CORS configured to allow ALL ORIGINS (*).")
 FIREBASE_URL = 'https://smart-solar-ecosystem-default-rtdb.firebaseio.com/'
 openai.api_key = os.environ.get('OPENAI_API_KEY')
 WEATHER_GRIDPOINTS_URL = "https://api.weather.gov/points/38.85,-77.03"
-PANEL_WATTAGE = 20.0  # Define the panel size
+PANEL_WATTAGE = 20.0
 
 # --- FIREBASE INITIALIZATION ---
 try:
@@ -42,7 +42,8 @@ except Exception as e:
 def get_weather_data():
     headers = {'User-Agent': '(Smart Solar Project, mykyta.sokoliuk@gmail.com)'}
     try:
-        obs_res = requests.get("https://api.weather.gov/stations/KDCA/observations/latest", headers=headers, timeout=15)
+        # INCREASED TIMEOUT FOR ROBUSTNESS
+        obs_res = requests.get("https://api.weather.gov/stations/KDCA/observations/latest", headers=headers, timeout=20)
         obs_res.raise_for_status()
         weather_properties = obs_res.json().get('properties', {})
         return jsonify({"current_observation": weather_properties}), 200
@@ -58,10 +59,12 @@ def analyze():
 
         # 1. Fetch Weather Forecast
         weather_headers = {'User-Agent': '(Smart Solar Project, mykyta.sokoliuk@gmail.com)'}
-        grid_res = requests.get(WEATHER_GRIDPOINTS_URL, headers=weather_headers, timeout=15)
+        # INCREASED TIMEOUT FOR ROBUSTNESS
+        grid_res = requests.get(WEATHER_GRIDPOINTS_URL, headers=weather_headers, timeout=20)
         grid_res.raise_for_status()
         forecast_hourly_url = grid_res.json()['properties']['forecastHourly']
-        forecast_res = requests.get(forecast_hourly_url, headers=weather_headers, timeout=15)
+        # INCREASED TIMEOUT FOR ROBUSTNESS
+        forecast_res = requests.get(forecast_hourly_url, headers=weather_headers, timeout=20)
         forecast_res.raise_for_status()
         forecast = forecast_res.json()['properties']['periods'][:12]
 
@@ -76,12 +79,12 @@ def analyze():
 
         Perform these steps:
         1.  Analyze the forecast for cloud cover, rain, and sun. Estimate the number of "equivalent peak sun hours" for the rest of the day (a number likely between 1 and 6).
-        2.  Calculate the "Expected Energy" (total generation in Wh) by multiplying the panel wattage by your estimated sun hours. This is the most important number.
+        2.  Calculate the "Expected Energy" (total generation in Wh) by multiplying the panel wattage by your estimated sun hours.
         3.  Calculate a "Net Energy Gain" by subtracting an estimated 20Wh for system power consumption from your Expected Energy.
-        4.  Write a brief, 2-sentence justification for your prediction, mentioning the key weather factors (e.g., "partly cloudy," "afternoon showers").
+        4.  Write a brief, 2-sentence justification for your prediction, mentioning the key weather factors.
 
         Respond ONLY with a valid JSON object in this exact format:
-        {{"report": "<Your 2-sentence justification>", "prediction": {{"total_wh": <float>, "net_wh_gain": <float>}}}}
+        {{"report": "<Your justification>", "prediction": {{"total_wh": <float>, "net_wh_gain": <float>}}}}
         """
 
         # 3. Call OpenAI API
@@ -100,7 +103,6 @@ def analyze():
         content = response['choices'][0]['message']['content']
         data = json.loads(content)
 
-        # Add a dummy final_soc for frontend compatibility
         if 'prediction' in data and isinstance(data['prediction'], dict):
             data['prediction']['final_soc'] = 0.0
 
@@ -115,5 +117,3 @@ def analyze():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
-    ```
-
