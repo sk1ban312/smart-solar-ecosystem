@@ -1,5 +1,5 @@
 # =================================================================
-# PYTHON FLASK API - V6.0 - FINAL PRODUCTION
+# PYTHON FLASK API - V6.1 - FINAL TYPO FIX
 # =================================================================
 from flask import Flask, jsonify
 from flask_cors import CORS
@@ -8,7 +8,7 @@ from firebase_admin import credentials, db
 import requests
 import json
 import openai
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta  # Ensure timedelta is imported
 import os
 import logging
 
@@ -19,7 +19,6 @@ logging.basicConfig(level=logging.INFO)
 app = Flask(__name__)
 
 # --- CORS SETUP ---
-# Allow all origins for maximum compatibility
 CORS(app, resources={r"/*": {"origins": "*"}})
 logging.info("CORS configured to allow ALL ORIGINS (*).")
 
@@ -27,6 +26,7 @@ logging.info("CORS configured to allow ALL ORIGINS (*).")
 FIREBASE_URL = 'https://smart-solar-ecosystem-default-rtdb.firebaseio.com/'
 openai.api_key = os.environ.get('OPENAI_API_KEY')
 WEATHER_GRIDPOINTS_URL = "https://api.weather.gov/points/38.85,-77.03"
+HISTORY_DAYS = 7  # Define HISTORY_DAYS
 
 # --- FIREBASE INITIALIZATION ---
 try:
@@ -65,28 +65,28 @@ def analyze():
         forecast_res.raise_for_status()
         forecast = forecast_res.json()['properties']['periods'][:12]
 
-        # 2. Fetch Latest Firebase Data
+        # 2. Fetch Firebase Data
         ref = db.reference('solar_telemetry')
-        latest_entry_query = ref.order_by_child('timestamp').limit_to_last(1).get()
-        if not latest_entry_query:
-            return jsonify({"error": "No telemetry data found"}), 404
+        # THIS IS THE FIX: Use 'timedelta' (lowercase)
+        seven_days_ago = int((datetime.now() - timedelta(days=HISTORY_DAYS)).timestamp())
+        history = ref.order_by_child('timestamp').start_at(seven_days_ago).get()
+        if not history:
+            return jsonify({"error": "No recent telemetry data found"}), 404
 
-        latest_entry = list(latest_entry_query.values())[0]
+        latest_entry = max(history.values(), key=lambda x: x['timestamp'])
         current_soc = latest_entry['battery_soc_perc']
 
         # 3. Construct the "Smart" OpenAI Prompt
         prompt = f"""
-        As a solar analyst for a 20W panel system in Washington D.C., analyze the following and provide a smart prediction for today.
-        - Current Battery SOC: {current_soc}%
-        - Weather Forecast (Next 12h): {json.dumps(forecast, indent=2)}
+        As a solar analyst for a 20W panel system in Washington D.C., analyze the current battery SOC of {current_soc}% and the following weather forecast: {json.dumps(forecast, indent=2)}.
 
         Tasks:
-        1.  Provide a short, 2-sentence analysis of today's solar generation potential based on the forecast.
-        2.  Predict the total solar energy generated (income) for the day in Watt-hours (Wh).
-        3.  Predict the net energy gain for the battery in Watt-hours (Wh) by the end of the day, considering a small constant load.
+        1.  Provide a short, 2-sentence analysis of today's solar generation potential.
+        2.  Predict the total solar energy generated for the day in Watt-hours (Wh).
+        3.  Predict the net energy gain for the battery in Watt-hours (Wh).
 
         Respond ONLY with a valid JSON object in this exact format:
-        {{"report": "<Your 2-sentence analysis>", "prediction": {{"total_wh": <float>, "net_wh_gain": <float>}}}}
+        {{"report": "<Your analysis>", "prediction": {{"total_wh": <float>, "net_wh_gain": <float>}}}}
         """
 
         # 4. Call OpenAI API
@@ -105,7 +105,6 @@ def analyze():
         content = response['choices'][0]['message']['content']
         data = json.loads(content)
 
-        # Add a dummy final_soc to ensure frontend compatibility
         if 'prediction' in data and isinstance(data['prediction'], dict):
             data['prediction']['final_soc'] = 0.0
 
