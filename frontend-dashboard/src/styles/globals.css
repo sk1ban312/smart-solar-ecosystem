@@ -388,3 +388,54 @@ h2 { font-size: 24px; font-weight: 600; margin: 0 0 16px 0; color: var(--text-pr
 .reference-table tbody tr:hover {
   background-color: #E9E9EC;
 }
+
+/* ... (keep all your existing CSS above this line) ... */
+
+/* -----------------------------------------------------------------
+   FINANCIAL SIMULATOR STYLES (ENHANCED)
+   ----------------------------------------------------------------- */
+.calculator-inputs h3, .calculator-results h3 {
+  display: flex;
+  align-items: center;
+  font-size: 20px;
+  margin-top: 0;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 12px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 24px; /* row-gap column-gap */
+}
+
+/* Make the grid a single column on smaller screens */
+@media (max-width: 768px) {
+  .calculator-container {
+    grid-template-columns: 1fr; /* Stack inputs and results vertically */
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+.btn-secondary {
+  background: #e9e9ec;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 980px;
+  padding: 10px 22px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-secondary:hover {
+  background: #dcdce0;
+}
