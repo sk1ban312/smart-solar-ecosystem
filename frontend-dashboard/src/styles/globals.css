@@ -439,3 +439,13 @@ h2 { font-size: 24px; font-weight: 600; margin: 0 0 16px 0; color: var(--text-pr
 .btn-secondary:hover {
   background: #dcdce0;
 }
+
+/* ... (keep all your existing CSS above this line) ... */
+
+/* -----------------------------------------------------------------
+   MOBILE SCROLLING FIX FOR TABLES
+   ----------------------------------------------------------------- */
+.table-container {
+  overflow-x: auto; /* This is the key change: enables horizontal scrolling */
+  -webkit-overflow-scrolling: touch; /* Improves scrolling feel on iOS devices */
+}

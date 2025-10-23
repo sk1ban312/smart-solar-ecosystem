@@ -24,7 +24,7 @@ export default function FinancialPage() {
   // State for the calculated results
   const [results, setResults] = useState(null);
 
-  // Fetch ALL historical data on page load (This is part of the original code)
+  // Fetch ALL historical data on page load
   useEffect(() => {
     const dataRef = query(ref(database, 'solar_telemetry'));
     const unsubscribe = onValue(dataRef, (snapshot) => {
@@ -45,42 +45,24 @@ export default function FinancialPage() {
     setInputs(prev => ({ ...prev, [name]: value }));
   };
 
-  // =================================================================
-  // CORRECTED CALCULATION LOGIC AS PER YOUR INSTRUCTIONS
-  // =================================================================
+  // The CORRECTED calculation logic from our previous conversation
   const calculateFinancials = () => {
-    // --- Part 1: Parse user inputs ---
     const panelCapacityW = parseFloat(inputs.panelCapacity) || 0;
     const tariff = parseFloat(inputs.tariff) || 0;
     const capex = parseFloat(inputs.capex) || 0;
     const omCosts = parseFloat(inputs.omCosts) || 0;
+    const peakSunHours = 5.0;
+    const projectLifetime = 20;
 
-    // --- Part 2: Use your specified assumptions ---
-    const peakSunHours = 5.0; // As per your calculation: "5 hours of good light"
-    const projectLifetime = 20; // For 20-year calculations
-
-    // --- Part 3: Implement your calculation steps ---
-
-    // Annual Energy Generation (kWh)
     const dailyGenerationWh = panelCapacityW * peakSunHours;
     const annualGenerationKwh = (dailyGenerationWh * 365) / 1000;
-
-    // Annual Savings ($)
     const annualSavings = annualGenerationKwh * tariff;
-
-    // Payback Period (years)
     const netAnnualSavings = annualSavings - omCosts;
     const paybackPeriod = (capex > 0 && netAnnualSavings > 0) ? capex / netAnnualSavings : Infinity;
-
-    // Total Profit (20-yr)
     const totalSavings = annualSavings * projectLifetime;
     const totalCosts = capex + (omCosts * projectLifetime);
     const totalProfit20y = totalSavings - totalCosts;
-
-    // ROI (20-yr)
     const roi20Years = capex > 0 ? (totalProfit20y / capex) * 100 : Infinity;
-
-    // Annual CO₂ Saved (kg)
     const annualCo2SavedKg = annualGenerationKwh * CO2_FACTOR_KG_PER_KWH;
 
     setResults({
@@ -93,14 +75,16 @@ export default function FinancialPage() {
     });
   };
 
-  // Data transcribed from your Excel sheet (from original code)
+  // --- NEW DATA SOURCE ---
+  // Data transcribed from your new CSV file
   const scaleScenarios = [
-      { scale: 'Prototype', panels: 1, power: 20, capex: 200, dailyGen: 0.09, annualSavings: 8.2, payback: 6.9, roi: 14.4, profit: 24, co2: 25 },
-      { scale: 'Small', panels: 10, power: 200, capex: 1300, dailyGen: 0.9, annualSavings: 81.6, payback: 68.6, roi: 14.4, profit: 240, co2: 250 },
-      { scale: 'Pilot', panels: 50, power: 1000, capex: 6500, dailyGen: 4.5, annualSavings: 408, payback: 343, roi: 14.4, profit: 1200, co2: 1250 },
-      { scale: 'SME', panels: 500, power: 10000, capex: 65000, dailyGen: 45, annualSavings: 4080, payback: 3430, roi: 14.4, profit: 12000, co2: 12500 },
-      { scale: 'Commercial', panels: 1000, power: 20000, capex: 130000, dailyGen: 90, annualSavings: 8160, payback: 6860, roi: 14.4, profit: 24000, co2: 25000 },
+    { scale: 'Prototype', capacity: 0.02, capex: 120.0, gen: 30.0, savings: 7.5, payback: 15.5, profit: 41.26, roi: 34.4, co2: 13.5 },
+    { scale: 'Small', capacity: 0.2, capex: 800.0, gen: 300.0, savings: 75.0, payback: 10.5, profit: 852.57, roi: 106.6, co2: 135.0 },
+    { scale: 'Pilot', capacity: 1.0, capex: 3000.0, gen: 1500.0, savings: 375.0, payback: 8.2, profit: 5062.84, roi: 168.8, co2: 675.0 },
+    { scale: 'SME', capacity: 10.0, capex: 25000.0, gen: 15000.0, savings: 3750.0, payback: 6.8, profit: 56628.42, roi: 226.5, co2: 6750.0 },
+    { scale: 'Commercial', capacity: 20.0, capex: 44000.0, gen: 30000.0, savings: 7500.0, payback: 6.0, profit: 120456.84, roi: 273.8, co2: 13500.0 }
   ];
+
 
   return (
     <Layout title="Financial Analytics">
@@ -111,6 +95,7 @@ export default function FinancialPage() {
         </p>
       </div>
 
+      {/* The Live Calculator section remains unchanged */}
       <div className="card full-width-card">
         <h2 style={{marginBottom: '24px'}}>Live Financial Calculator</h2>
         <div className="calculator-container">
@@ -159,6 +144,7 @@ export default function FinancialPage() {
         </div>
       </div>
 
+      {/* --- UPDATED REFERENCE TABLE --- */}
       <div className="full-width-card" style={{marginTop: '40px'}}>
         <h2>Reference Scenarios (from Financial Model)</h2>
         <p style={{color: 'var(--text-secondary)', marginTop: '-10px', marginBottom: '24px'}}>
@@ -169,14 +155,13 @@ export default function FinancialPage() {
                 <thead>
                     <tr>
                         <th>Scale</th>
-                        <th className="text-right">Panels</th>
-                        <th className="text-right">Power (W)</th>
+                        <th className="text-right">Capacity (kW)</th>
                         <th className="text-right">Capex ($)</th>
-                        <th className="text-right">Daily Gen (kWh)</th>
-                        <th className="text-right">Annual Savings ($)</th>
+                        <th className="text-right">Gen (kWh/yr)</th>
+                        <th className="text-right">Savings ($/yr)</th>
                         <th className="text-right">Payback (yrs)</th>
+                        <th className="text-right">Profit (20y, $)</th>
                         <th className="text-right">ROI (20y, %)</th>
-                        <th className="text-right">Total Profit 20y ($)</th>
                         <th className="text-right">CO₂ Saved (kg/yr)</th>
                     </tr>
                 </thead>
@@ -184,14 +169,13 @@ export default function FinancialPage() {
                     {scaleScenarios.map(row => (
                         <tr key={row.scale}>
                             <td><strong>{row.scale}</strong></td>
-                            <td className="text-right">{row.panels.toLocaleString()}</td>
-                            <td className="text-right">{row.power.toLocaleString()}</td>
+                            <td className="text-right">{row.capacity.toFixed(2)}</td>
                             <td className="text-right">{row.capex.toLocaleString()}</td>
-                            <td className="text-right">{row.dailyGen.toFixed(2)}</td>
-                            <td className="text-right">{row.annualSavings.toFixed(2)}</td>
+                            <td className="text-right">{row.gen.toLocaleString()}</td>
+                            <td className="text-right">{row.savings.toLocaleString()}</td>
                             <td className="text-right">{row.payback.toFixed(1)}</td>
-                            <td className="text-right">{row.roi.toFixed(1)}</td>
                             <td className="text-right">{row.profit.toLocaleString()}</td>
+                            <td className="text-right">{row.roi.toFixed(1)}</td>
                             <td className="text-right">{row.co2.toLocaleString()}</td>
                         </tr>
                     ))}
