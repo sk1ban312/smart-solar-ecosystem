@@ -45,15 +45,19 @@ export default function FinancialPage() {
     setInputs(prev => ({ ...prev, [name]: value }));
   };
 
-  // The CORRECTED calculation logic from our previous conversation
+  // UPDATED CALCULATION LOGIC
   const calculateFinancials = () => {
     const panelCapacityW = parseFloat(inputs.panelCapacity) || 0;
     const tariff = parseFloat(inputs.tariff) || 0;
     const capex = parseFloat(inputs.capex) || 0;
     const omCosts = parseFloat(inputs.omCosts) || 0;
-    const peakSunHours = 5.0;
+
+    // --- LOGIC UPDATED ---
+    // This value is now adjusted to align with the new reference table.
+    const peakSunHours = 4.1;
     const projectLifetime = 20;
 
+    // The rest of the logic remains the same
     const dailyGenerationWh = panelCapacityW * peakSunHours;
     const annualGenerationKwh = (dailyGenerationWh * 365) / 1000;
     const annualSavings = annualGenerationKwh * tariff;
@@ -75,8 +79,7 @@ export default function FinancialPage() {
     });
   };
 
-  // --- NEW DATA SOURCE ---
-  // Data transcribed from your new CSV file
+  // Data from your new CSV file
   const scaleScenarios = [
     { scale: 'Prototype', capacity: 0.02, capex: 120.0, gen: 30.0, savings: 7.5, payback: 15.5, profit: 41.26, roi: 34.4, co2: 13.5 },
     { scale: 'Small', capacity: 0.2, capex: 800.0, gen: 300.0, savings: 75.0, payback: 10.5, profit: 852.57, roi: 106.6, co2: 135.0 },
@@ -95,7 +98,6 @@ export default function FinancialPage() {
         </p>
       </div>
 
-      {/* The Live Calculator section remains unchanged */}
       <div className="card full-width-card">
         <h2 style={{marginBottom: '24px'}}>Live Financial Calculator</h2>
         <div className="calculator-container">
@@ -144,12 +146,9 @@ export default function FinancialPage() {
         </div>
       </div>
 
-      {/* --- UPDATED REFERENCE TABLE --- */}
       <div className="full-width-card" style={{marginTop: '40px'}}>
         <h2>Reference Scenarios (from Financial Model)</h2>
-        <p style={{color: 'var(--text-secondary)', marginTop: '-10px', marginBottom: '24px'}}>
-            The following table contains pre-calculated estimates for different system scales, based on the provided financial spreadsheet.
-        </p>
+        {/* --- TEXT REMOVED FROM HERE --- */}
         <div className="table-container">
             <table className="reference-table">
                 <thead>
