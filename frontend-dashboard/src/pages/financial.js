@@ -45,19 +45,17 @@ export default function FinancialPage() {
     setInputs(prev => ({ ...prev, [name]: value }));
   };
 
-  // UPDATED CALCULATION LOGIC
+  // --- RESTORED, CORRECT CALCULATION LOGIC ---
   const calculateFinancials = () => {
     const panelCapacityW = parseFloat(inputs.panelCapacity) || 0;
     const tariff = parseFloat(inputs.tariff) || 0;
     const capex = parseFloat(inputs.capex) || 0;
     const omCosts = parseFloat(inputs.omCosts) || 0;
 
-    // --- LOGIC UPDATED ---
-    // This value is now adjusted to align with the new reference table.
-    const peakSunHours = 4.1;
+    // Using the 5.0 hours assumption that resulted in the correct numbers
+    const peakSunHours = 5.0;
     const projectLifetime = 20;
 
-    // The rest of the logic remains the same
     const dailyGenerationWh = panelCapacityW * peakSunHours;
     const annualGenerationKwh = (dailyGenerationWh * 365) / 1000;
     const annualSavings = annualGenerationKwh * tariff;
@@ -87,7 +85,6 @@ export default function FinancialPage() {
     { scale: 'SME', capacity: 10.0, capex: 25000.0, gen: 15000.0, savings: 3750.0, payback: 6.8, profit: 56628.42, roi: 226.5, co2: 6750.0 },
     { scale: 'Commercial', capacity: 20.0, capex: 44000.0, gen: 30000.0, savings: 7500.0, payback: 6.0, profit: 120456.84, roi: 273.8, co2: 13500.0 }
   ];
-
 
   return (
     <Layout title="Financial Analytics">
@@ -148,7 +145,7 @@ export default function FinancialPage() {
 
       <div className="full-width-card" style={{marginTop: '40px'}}>
         <h2>Reference Scenarios (from Financial Model)</h2>
-        {/* --- TEXT REMOVED FROM HERE --- */}
+        {/* The text you wanted removed is now gone from this spot */}
         <div className="table-container">
             <table className="reference-table">
                 <thead>
