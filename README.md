@@ -1,10 +1,10 @@
 # Smart Solar Ecosystem & Analytics Dashboard
 
-### [View Live Demo](https://smart-solar-ecosystem-git-main-mykytas-projects-70aca375.vercel.app/)
+### [View Live Demo](https://smart-solar-ecosystem.vercel.app/)
 
 A full-stack IoT application that monitors a real-world solar panel, predicts energy generation using AI, and calculates financial viability.
 
-![Project Showcase](https://github.com/sk1ban312/smart-solar-ecosystem/raw/main/documentation/project-assets/showcase.png)
+![Project Showcase](https://github.com/sk1ban312/smart-solar-ecosystem/raw/4dc03d75bd6b2709702faebef4b9f1937f8f9531/documentation/project-assets/Home%20page.png)
 *A showcase of the project's key interfaces: the live dashboard, historical data log, and interactive financial calculator.*
 
 ---
@@ -21,8 +21,8 @@ This project demonstrates a scalable ecosystem combining hardware, software, AI,
 
 The system is composed of two primary domains: the physical hardware for data collection and the cloud software for processing, analysis, and presentation.
 
-*   **[Hardware & IoT Data Flow (Diagram 1)](https://github.com/sk1ban312/smart-solar-ecosystem/blob/d0deece5b0271c542ca6bbae47878f1555f70f82/documentation/project-assets/Physical_components-Page-1.drawio%20(1).png)**: The flow of data from the physical sensors to the cloud database.
-*   **[Web Application & Cloud Architecture (Diagram 2)](https://github.com/sk1ban312/smart-solar-ecosystem/blob/d0deece5b0271c542ca6bbae47878f1555f70f82/documentation/project-assets/Web%20and%20Cloud.drawio.pdf)**: The interaction between the user, frontend, backend API, and external services.
+*   **[Hardware & IoT Data Flow (Diagram 1)](https://github.com/sk1ban312/smart-solar-ecosystem/blob/4dc03d75bd6b2709702faebef4b9f1937f8f9531/documentation/project-assets/Physical_components-Page-1.drawio%20(1).png)**: The flow of data from the physical sensors to the cloud database.
+*   **[Web Application & Cloud Architecture (Diagram 2)](https://github.com/sk1ban312/smart-solar-ecosystem/blob/4dc03d75bd6b2709702faebef4b9f1937f8f9531/documentation/project-assets/Web%20and%20Cloud.drawio.pdf)**: The interaction between the user, frontend, backend API, and external services.
 
 ## Hardware Components & Workflow
 
