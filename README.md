@@ -1,6 +1,6 @@
 # Smart Solar Ecosystem & Analytics Dashboard
 
-### [View Live Demo](https://smart-solar-ecosystem-git-main-mykytas-projects-70aca375.vercel.app/)
+### [View Live Demo](https://smart-solar-ecosystem.vercel.app/)
 
 A full-stack IoT application that monitors a real-world solar panel, predicts energy generation using AI, and calculates financial viability.
 
