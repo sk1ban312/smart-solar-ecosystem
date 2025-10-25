@@ -4,8 +4,14 @@
 
 A full-stack IoT application that monitors a real-world solar panel, predicts energy generation using AI, and calculates financial viability.
 
-![Dashboard View](https://github.com/sk1ban312/smart-solar-ecosystem/blob/e135f84fc3bcd909af7f4ada522eef108615bdc6/documentation/project-assets/Home%20page.png) (https://github.com/sk1ban312/smart-solar-ecosystem/blob/e135f84fc3bcd909af7f4ada522eef108615bdc6/documentation/project-assets/Database%20page.png) (https://github.com/sk1ban312/smart-solar-ecosystem/blob/e135f84fc3bcd909af7f4ada522eef108615bdc6/documentation/project-assets/Financial%20page.png)
+![Dashboard View](https://github.com/sk1ban312/smart-solar-ecosystem/raw/main/documentation/project-assets/Home%20page.png)
+*The main dashboard displaying live sensor data and AI predictions.*
 
+![Database View](https://github.com/sk1ban312/smart-solar-ecosystem/raw/main/documentation/project-assets/Database%20page.png)
+*The telemetry log showing the latest 100 data points from the system.*
+
+![Financial View](https://github.com/sk1ban312/smart-solar-ecosystem/raw/main/documentation/project-assets/Financial%20page.png)
+*The interactive calculator for projecting financial outcomes.*
 ---
 
 ## About The Project
