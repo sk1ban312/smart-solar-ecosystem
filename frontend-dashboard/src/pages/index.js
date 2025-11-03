@@ -1,32 +1,103 @@
 // File: frontend-dashboard/src/pages/index.js
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Layout from '../components/Layout';
-import { database, ref, onValue } from '../firebase';
 import axios from 'axios';
 import { FaBatteryFull, FaChartLine, FaSun } from 'react-icons/fa';
 import { WiDaySunny, WiThermometer, WiCloudy, WiStrongWind } from 'react-icons/wi';
 
 const FLASK_API_URL = process.env.NEXT_PUBLIC_FLASK_API_URL;
 
+// --- MOCK DATA SIMULATION LOGIC ---
+
+// Data points from your provided table for interpolation
+const luxPowerTable = [
+    { lux: 0, current: 0 },
+    { lux: 1000, current: 0.011 },
+    { lux: 10000, current: 0.11 },
+    { lux: 20000, current: 0.22 },
+    { lux: 50000, current: 0.56 },
+    { lux: 100000, current: 1.11 },
+    { lux: 120000, current: 1.25 } // Added an extra point for very bright days
+];
+
+// Function to get current based on lux by interpolating between table points
+const getCurrentFromLux = (lux) => {
+    if (lux <= luxPowerTable[0].lux) return luxPowerTable[0].current;
+
+    for (let i = 1; i < luxPowerTable.length; i++) {
+        if (lux < luxPowerTable[i].lux) {
+            const lower = luxPowerTable[i - 1];
+            const upper = luxPowerTable[i];
+            const range = upper.lux - lower.lux;
+            const pos = lux - lower.lux;
+            const percent = pos / range;
+            const currentRange = upper.current - lower.current;
+            return lower.current + (percent * currentRange);
+        }
+    }
+    return luxPowerTable[luxPowerTable.length - 1].current;
+};
+
+// Function to get a weather modifier for sunlight simulation
+const getWeatherModifier = (weather) => {
+    if (!weather?.textDescription) return 0.7; // Default to partly cloudy if no data
+    const desc = weather.textDescription.toLowerCase();
+    if (desc.includes("sunny") || desc.includes("clear")) return 1.0;
+    if (desc.includes("mostly sunny") || desc.includes("partly sunny")) return 0.8;
+    if (desc.includes("partly cloudy")) return 0.6;
+    if (desc.includes("mostly cloudy")) return 0.4;
+    if (desc.includes("cloudy")) return 0.3;
+    if (desc.includes("rain") || desc.includes("fog") || desc.includes("overcast")) return 0.15;
+    return 0.5; // Default for other conditions
+};
+
+const generateMockData = (weather) => {
+    const now = new Date();
+    const hour = now.getHours() + now.getMinutes() / 60;
+
+    // 1. Simulate Sunlight (Lux) based on time of day in a curve
+    const sunrise = 6;
+    const sunset = 19.5;
+    let sunFactor = 0;
+    if (hour > sunrise && hour < sunset) {
+        const midday = (sunrise + sunset) / 2;
+        const x = (hour - midday) / (midday - sunrise);
+        sunFactor = Math.max(0, 1 - x * x); // Parabolic curve for sun intensity
+    }
+    const baseLux = 105000 * sunFactor;
+    const weatherModifier = getWeatherModifier(weather);
+    const sunlight_lux = baseLux * weatherModifier;
+
+    // 2. Calculate Power based on Lux from the provided table
+    const CONSTANT_VOLTAGE = 13.0;
+    const current_a = getCurrentFromLux(sunlight_lux);
+    const dc_current_ma = current_a * 1000;
+    const dc_power_w = sunlight_lux > 0 ? CONSTANT_VOLTAGE * current_a : 0;
+    const dc_voltage_v = sunlight_lux > 0 ? CONSTANT_VOLTAGE + (Math.random() - 0.5) * 0.4 : 0; // Add slight fluctuation
+
+    // 3. Simulate other sensor values
+    const panel_temp_c = 18 + (sunlight_lux / 100000) * 25; // Temp increases with sun
+
+    return {
+        timestamp: Math.floor(now.getTime() / 1000),
+        dc_power_w: dc_power_w,
+        dc_voltage_v: dc_voltage_v,
+        dc_current_ma: dc_current_ma,
+        sunlight_lux: sunlight_lux,
+        panel_temp_c: panel_temp_c,
+    };
+};
+
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [weather, setWeather] = useState(null);
   const [aiState, setAiState] = useState({ loading: false, report: null, error: null });
 
-  // Fetch real-time solar data from Firebase
-  useEffect(() => {
-    const q = ref(database, 'solar_telemetry');
-    const unsubscribe = onValue(q, (snapshot) => {
-      const val = snapshot.val();
-      if (val) {
-        const latest = Object.values(val).reduce((a, b) => a.timestamp > b.timestamp ? a : b);
-        setData(latest);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+  // State specifically for the mock battery
+  const [batterySOC, setBatterySOC] = useState(50.0);
+  const lastBatteryUpdateHour = useRef(new Date().getHours());
 
-  // Fetch weather data from our Flask API
+  // Fetch weather data from our Flask API on initial load
   useEffect(() => {
     const fetchWeather = async () => {
         try {
@@ -38,7 +109,36 @@ export default function Dashboard() {
         }
     };
     fetchWeather();
+    // Fetch weather every 15 minutes
+    const interval = setInterval(fetchWeather, 15 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
+
+  // Main simulation loop
+  useEffect(() => {
+    const simulationInterval = setInterval(() => {
+      const currentHour = new Date().getHours();
+
+      // Update battery SOC once per hour
+      if (currentHour !== lastBatteryUpdateHour.current) {
+          lastBatteryUpdateHour.current = currentHour;
+          const newSOC = 40 + Math.random() * 40; // Random value between 40 and 80
+          setBatterySOC(newSOC);
+      }
+
+      const mockSensorData = generateMockData(weather?.current_observation);
+
+      // Combine sensor data with battery data
+      setData({
+          ...mockSensorData,
+          battery_soc_perc: batterySOC,
+      });
+
+    }, 3000); // Update every 3 seconds
+
+    return () => clearInterval(simulationInterval);
+  }, [weather, batterySOC]); // Rerun effect if weather or battery data changes
+
 
   const runAnalysis = async () => {
     setAiState({ loading: true, report: null, error: null });
@@ -64,7 +164,7 @@ export default function Dashboard() {
   };
 
 
-  if (!data) return <Layout><div style={{textAlign:'center', marginTop:'100px', color:'var(--text-secondary)'}}><h1>Awaiting Sensor Data...</h1></div></Layout>;
+  if (!data) return <Layout><div style={{textAlign:'center', marginTop:'100px', color:'var(--text-secondary)'}}><h1>Starting Simulation...</h1></div></Layout>;
 
   const socColor = data.battery_soc_perc > 30 ? 'color-green' : 'color-red';
   const batteryFillColor = data.battery_soc_perc > 30 ? 'var(--accent-green)' : 'var(--accent-red)';
@@ -73,7 +173,7 @@ export default function Dashboard() {
   return (
     <Layout title="System Overview">
       <div style={{ textAlign: 'center', paddingTop: '50px', paddingBottom: '70px' }}>
-        <h1 style={{ fontSize: '56px', fontWeight: 600 }}>Solar Energy System</h1>
+        <h1 style={{ fontSize: '56px', fontWeight: 600 }}>Solar Energy System (Simulated)</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '24px', marginTop: '8px' }}>
           Last Measurement: {new Date(data.timestamp * 1000).toLocaleString()}
         </p>
