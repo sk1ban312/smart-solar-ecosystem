@@ -4,6 +4,36 @@ import Layout from '../components/Layout';
 import { database, ref, onValue, query, limitToLast } from '../firebase';
 import { FaSun, FaBolt, FaThermometerHalf } from 'react-icons/fa';
 
+// --- NEW: Accurate Battery SOC Calculation for 12V SLA Battery ---
+const getBatterySOC = (voltage) => {
+    // This maps voltage to State of Charge (SOC) based on typical 12V SLA battery curves.
+    const voltageMap = [
+        { v: 11.6, soc: 0 },
+        { v: 11.8, soc: 20 },
+        { v: 12.1, soc: 40 },
+        { v: 12.2, soc: 50 },
+        { v: 12.4, soc: 70 },
+        { v: 12.7, soc: 100 }
+    ];
+
+    if (voltage >= voltageMap[voltageMap.length - 1].v) return 100;
+    if (voltage <= voltageMap[0].v) return 0;
+
+    for (let i = 1; i < voltageMap.length; i++) {
+        if (voltage < voltageMap[i].v) {
+            const lower = voltageMap[i - 1];
+            const upper = voltageMap[i];
+            const voltageRange = upper.v - lower.v;
+            const socRange = upper.soc - lower.soc;
+            const voltagePosition = voltage - lower.v;
+            const soc = lower.soc + (voltagePosition / voltageRange) * socRange;
+            return Math.min(100, Math.max(0, soc)); // Ensure value is between 0 and 100
+        }
+    }
+    return 0; // Fallback
+};
+
+
 export default function DataPage() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -14,8 +44,14 @@ export default function DataPage() {
     const unsubscribe = onValue(q, (snapshot) => {
       const val = snapshot.val();
       if (val) {
-        const list = Object.values(val).sort((a, b) => b.timestamp - a.timestamp);
-        setLogs(list);
+        // --- APPLY NEW BATTERY LOGIC TO ALL LOGS ---
+        const processedList = Object.values(val).map(log => ({
+            ...log, // Keep all original log data
+            battery_soc_perc: getBatterySOC(log.dc_voltage_v) // Overwrite with the calculated SOC
+        }));
+
+        const sortedList = processedList.sort((a, b) => b.timestamp - a.timestamp);
+        setLogs(sortedList);
       }
       setLoading(false);
     }, (error) => {
