@@ -5,77 +5,52 @@ import { database, ref, onValue, query, limitToLast } from '../firebase';
 import axios from 'axios';
 import { FaBatteryFull, FaChartLine, FaSun } from 'react-icons/fa';
 import { WiDaySunny, WiThermometer, WiCloudy, WiStrongWind } from 'react-icons/wi';
+import { useTemperature } from '../context/TemperatureContext'; // Import the hook
 
 const FLASK_API_URL = process.env.NEXT_PUBLIC_FLASK_API_URL;
 
-// --- NEW: Accurate Battery SOC Calculation for 12V SLA Battery ---
 const getBatterySOC = (voltage) => {
-    // This maps voltage to State of Charge (SOC) based on typical 12V SLA battery curves.
-    const voltageMap = [
-        { v: 11.6, soc: 0 },
-        { v: 11.8, soc: 20 },
-        { v: 12.1, soc: 40 },
-        { v: 12.2, soc: 50 },
-        { v: 12.4, soc: 70 },
-        { v: 12.7, soc: 100 }
-    ];
-
+    const voltageMap = [ { v: 11.6, soc: 0 }, { v: 11.8, soc: 20 }, { v: 12.1, soc: 40 }, { v: 12.2, soc: 50 }, { v: 12.4, soc: 70 }, { v: 12.7, soc: 100 } ];
     if (voltage >= voltageMap[voltageMap.length - 1].v) return 100;
     if (voltage <= voltageMap[0].v) return 0;
-
     for (let i = 1; i < voltageMap.length; i++) {
         if (voltage < voltageMap[i].v) {
-            const lower = voltageMap[i - 1];
-            const upper = voltageMap[i];
-            const voltageRange = upper.v - lower.v;
-            const socRange = upper.soc - lower.soc;
-            const voltagePosition = voltage - lower.v;
-            const soc = lower.soc + (voltagePosition / voltageRange) * socRange;
-            return Math.min(100, Math.max(0, soc)); // Ensure value is between 0 and 100
+            const lower = voltageMap[i - 1]; const upper = voltageMap[i]; const voltageRange = upper.v - lower.v; const socRange = upper.soc - lower.soc; const voltagePosition = voltage - lower.v; const soc = lower.soc + (voltagePosition / voltageRange) * socRange; return Math.min(100, Math.max(0, soc));
         }
     }
-    return 0; // Fallback
+    return 0;
 };
 
+// Celsius to Fahrenheit conversion function
+const celsiusToFahrenheit = (c) => (c * 9/5) + 32;
 
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [weather, setWeather] = useState(null);
   const [aiState, setAiState] = useState({ loading: false, report: null, error: null });
+  const { tempUnit } = useTemperature(); // Get the current unit from context
 
-  // Fetch real-time solar data from Firebase
   useEffect(() => {
-    // This query gets the single most recent entry from your database
     const q = query(ref(database, 'solar_telemetry'), limitToLast(1));
     const unsubscribe = onValue(q, (snapshot) => {
       const val = snapshot.val();
       if (val) {
-        // The result is an object with a random key, so we get the first (and only) value
         const latest = Object.values(val)[0];
-
-        // --- APPLY NEW BATTERY LOGIC ---
-        // Overwrite the stored SOC with our more accurate calculation
         latest.battery_soc_perc = getBatterySOC(latest.dc_voltage_v);
-
         setData(latest);
       }
     });
     return () => unsubscribe();
   }, []);
 
-  // Fetch weather data from our Flask API
   useEffect(() => {
     const fetchWeather = async () => {
         try {
             const res = await axios.get(`${FLASK_API_URL}/weather`);
             setWeather(res.data);
-        } catch (error) {
-            console.error("Failed to fetch weather:", error);
-            setWeather(null);
-        }
+        } catch (error) { console.error("Failed to fetch weather:", error); setWeather(null); }
     };
     fetchWeather();
-    // Fetch new weather data every 15 minutes
     const interval = setInterval(fetchWeather, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
@@ -87,14 +62,7 @@ export default function Dashboard() {
       const { report, prediction } = res.data;
       setAiState({
         loading: false,
-        report: {
-            report: report,
-            prediction: {
-                final_soc: prediction.final_soc.toFixed(1),
-                total_wh: prediction.total_wh.toFixed(1),
-                net_wh_gain: (prediction.net_wh_gain || 0).toFixed(1)
-            }
-        },
+        report: { report: report, prediction: { final_soc: prediction.final_soc.toFixed(1), total_wh: prediction.total_wh.toFixed(1), net_wh_gain: (prediction.net_wh_gain || 0).toFixed(1) }},
         error: null
       });
     } catch (err) {
@@ -120,7 +88,6 @@ export default function Dashboard() {
       </div>
 
       <div className="grid">
-        {/* === COLUMN 1 === */}
         <div className="col-6" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           <div className="card">
             <div style={{display:'flex', flexDirection:'row', alignItems:'center', justifyContent:'space-between'}}>
@@ -156,7 +123,9 @@ export default function Dashboard() {
             </div>
             <div className="data-row">
               <span className="data-key"><WiThermometer className="icon-small"/> Panel Temp</span>
-              <span className="data-val">{data.panel_temp_c.toFixed(1)} °C</span>
+              <span className="data-val">
+                {tempUnit === 'C' ? data.panel_temp_c.toFixed(1) : celsiusToFahrenheit(data.panel_temp_c).toFixed(1)} °{tempUnit}
+              </span>
             </div>
             <div className="data-row">
               <span className="data-key" style={{paddingLeft: '26px'}}>Bus Voltage</span>
@@ -165,14 +134,20 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* === COLUMN 2 === */}
         <div className="col-6" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           <div className="card">
             <h2>Washington DC Weather</h2>
             {weatherObs ? (
               <>
                 <div className="data-row"><span className="data-key"><WiCloudy className="icon-small"/> Conditions</span><span className="data-val">{weatherObs.textDescription}</span></div>
-                <div className="data-row"><span className="data-key"><WiThermometer className="icon-small"/> Temperature</span><span className="data-val">{weatherObs.temperature.value?.toFixed(1) ?? 'N/A'} °C</span></div>
+                <div className="data-row">
+                    <span className="data-key"><WiThermometer className="icon-small"/> Temperature</span>
+                    <span className="data-val">
+                      {(weatherObs.temperature.value !== null) ? (
+                        tempUnit === 'C' ? weatherObs.temperature.value.toFixed(1) : celsiusToFahrenheit(weatherObs.temperature.value).toFixed(1)
+                      ) : 'N/A'} °{tempUnit}
+                    </span>
+                </div>
                 <div className="data-row">
                     <span className="data-key"><WiStrongWind className="icon-small"/> Wind Speed</span>
                     <span className="data-val">{(weatherObs.windSpeed.value ?? 0).toFixed(1)} km/h</span>

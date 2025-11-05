@@ -1,13 +1,14 @@
-// File: frontend-dashboard/src/components/Layout.js
-import { useState } from 'react'; // Import useState
+import { useState } from 'react';
 import Link from 'next/link';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
+import { useTemperature } from '../context/TemperatureContext'; // Import the custom hook
 
 const Layout = ({ children, title = 'UET Solar Ecosystem' }) => {
   const router = useRouter();
-  const [isLogoModalOpen, setLogoModalOpen] = useState(false); // State for the modal
+  const [isLogoModalOpen, setLogoModalOpen] = useState(false);
+  const { tempUnit, toggleTempUnit } = useTemperature(); // Use the temperature context
 
   const isActive = (path) => router.pathname === path ? 'active' : '';
 
@@ -18,7 +19,6 @@ const Layout = ({ children, title = 'UET Solar Ecosystem' }) => {
         <meta name="viewport" content="initial-scale=1.0, width=device-width" />
       </Head>
 
-      {/* MODAL for the logo */}
       {isLogoModalOpen && (
         <div className="logo-modal-backdrop" onClick={() => setLogoModalOpen(false)}>
           <div className="logo-modal-content">
@@ -37,7 +37,6 @@ const Layout = ({ children, title = 'UET Solar Ecosystem' }) => {
       <nav className="navbar">
         <div className="nav-content">
           <div className="nav-logo">
-            {/* Changed to a button to trigger modal */}
             <button onClick={() => setLogoModalOpen(true)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
               <Image
                 src="/uet-logo.png"
@@ -55,7 +54,16 @@ const Layout = ({ children, title = 'UET Solar Ecosystem' }) => {
             <Link href="/financial" className={isActive('/financial')}>Financial</Link>
           </div>
 
-          <div style={{ width: '32px' }}></div>
+          {/* --- NEW TEMPERATURE TOGGLE BUTTON --- */}
+          <div style={{ width: '80px', textAlign: 'right' }}>
+             <button
+                onClick={toggleTempUnit}
+                className="btn-secondary"
+                style={{ padding: '5px 12px', color: '#FFF', background: '#333' }}
+             >
+                °{tempUnit === 'C' ? 'F' : 'C'}
+            </button>
+          </div>
         </div>
       </nav>
 
