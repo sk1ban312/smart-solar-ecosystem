@@ -5,7 +5,7 @@ import { database, ref, onValue, query, limitToLast, startAt, orderByChild } fro
 import { FaSun, FaBolt, FaThermometerHalf, FaCalendarWeek, FaChartBar, FaTachometerAlt, FaStar } from 'react-icons/fa';
 import { useTemperature } from '../context/TemperatureContext';
 
-// --- HELPER FUNCTIONS (NOW MORE ROBUST) ---
+// --- HELPER FUNCTIONS ---
 const getBatterySOC = (voltage) => {
     if (typeof voltage !== 'number') return 0;
     const voltageMap = [ { v: 11.6, soc: 0 }, { v: 11.8, soc: 20 }, { v: 12.1, soc: 40 }, { v: 12.2, soc: 50 }, { v: 12.4, soc: 70 }, { v: 12.7, soc: 100 } ];
@@ -26,7 +26,7 @@ const celsiusToFahrenheit = (c) => {
 
 // --- DATA PROCESSING (REWRITTEN FOR STABILITY) ---
 const processWeeklyData = (data) => {
-    if (!data || data.length === 0) return null;
+    if (!data || data.length < 2) return null; // Need at least two points to calculate generation
 
     const groupedByDate = data.reduce((acc, log) => {
         if (!log || typeof log.timestamp !== 'number') return acc;
@@ -40,20 +40,19 @@ const processWeeklyData = (data) => {
         const dayData = groupedByDate[date].sort((a, b) => a.timestamp - b.timestamp);
         let totalGenerationWh = 0, peakPowerW = 0, maxVoltage = 0, maxCurrent = 0, tempSum = 0;
 
-        for (let i = 0; i < dayData.length; i++) {
+        for (let i = 1; i < dayData.length; i++) {
             const log = dayData[i];
+            const prevLog = dayData[i-1];
+
             const power = log.dc_power_w || 0;
             const voltage = log.dc_voltage_v || 0;
             const current = log.dc_current_ma || 0;
             const temp = log.panel_temp_c || 0;
+            const prevPower = prevLog.dc_power_w || 0;
 
-            if (i > 0) {
-                const prevLog = dayData[i-1];
-                const prevPower = prevLog.dc_power_w || 0;
-                const timeDiffHours = (log.timestamp - prevLog.timestamp) / 3600;
-                if (timeDiffHours > 0 && timeDiffHours < 1) {
-                    totalGenerationWh += ((power + prevPower) / 2) * timeDiffHours;
-                }
+            const timeDiffHours = (log.timestamp - prevLog.timestamp) / 3600;
+            if (timeDiffHours > 0 && timeDiffHours < 1) { // Only calculate for reasonable intervals
+                totalGenerationWh += ((power + prevPower) / 2) * timeDiffHours;
             }
             if (power > peakPowerW) peakPowerW = power;
             if (voltage > maxVoltage) maxVoltage = voltage;
@@ -64,16 +63,14 @@ const processWeeklyData = (data) => {
         return { date, totalGenerationWh, peakPowerW, maxVoltage, maxCurrent, avgPanelTemp: dayData.length > 0 ? tempSum / dayData.length : 0 };
     }).sort((a,b) => new Date(b.date) - new Date(a.date));
 
-    // *** CRITICAL FIX ***
-    // If after processing, there are no valid daily stats, stop here.
     if (dailyStats.length === 0) return null;
 
-    const totalWeeklyGenerationWh = dailyStats.reduce((sum, day) => sum + day.totalGenerationWh, 0);
-    const bestDay = dailyStats.reduce((best, day) => (day.totalGenerationWh || 0) > (best.totalGenerationWh || 0) ? day : best);
+    const totalWeeklyGenerationWh = dailyStats.reduce((sum, day) => sum + (day.totalGenerationWh || 0), 0);
+    const bestDay = dailyStats.reduce((best, day) => ((day.totalGenerationWh || 0) > (best.totalGenerationWh || 0)) ? day : best, {totalGenerationWh: -1});
 
     const weeklyStats = {
         totalWeeklyKwh: totalWeeklyGenerationWh / 1000,
-        avgDailyWh: totalWeeklyGenerationWh / dailyStats.length,
+        avgDailyWh: dailyStats.length > 0 ? totalWeeklyGenerationWh / dailyStats.length : 0,
         peakGenerationW: Math.max(0, ...dailyStats.map(day => day.peakPowerW || 0)),
         peakSunlightLux: Math.max(0, ...data.map(log => log.sunlight_lux || 0)),
         bestDayDate: bestDay.date,
@@ -93,32 +90,25 @@ export default function DataPage() {
   const { tempUnit } = useTemperature();
   const MAX_LOGS = 100;
 
-  // Fetcher for raw logs (no changes needed here)
   useEffect(() => {
     const q = query(ref(database, 'solar_telemetry'), limitToLast(MAX_LOGS));
     const unsubscribe = onValue(q, (snapshot) => {
       const val = snapshot.val();
-      if (val) {
-        const list = Object.values(val).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        setRawLogs(list);
-      }
+      setRawLogs(val ? Object.values(val).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)) : []);
       setLoadingRaw(false);
-    }, (error) => { console.error("Firebase Read Error (Raw):", error); setLoadingRaw(false); });
+    }, { onlyOnce: true }); // Fetch once on load
     return () => unsubscribe();
   }, []);
 
-  // Fetcher for analytics data
   useEffect(() => {
       const sevenDaysAgoTimestamp = Math.floor((new Date().getTime() / 1000) - (7 * 24 * 60 * 60));
       const q = query(ref(database, 'solar_telemetry'), orderByChild('timestamp'), startAt(sevenDaysAgoTimestamp));
 
       const unsubscribe = onValue(q, (snapshot) => {
           const val = snapshot.val();
-          // Process data only if it exists
-          const processedAnalytics = val ? processWeeklyData(Object.values(val)) : null;
-          setAnalytics(processedAnalytics);
+          setAnalytics(val ? processWeeklyData(Object.values(val)) : null);
           setLoadingAnalytics(false);
-      }, (error) => { console.error("Firebase Read Error (Analytics):", error); setLoadingAnalytics(false); });
+      }, { onlyOnce: true }); // Fetch once on load
       return () => unsubscribe();
   }, []);
 
@@ -135,7 +125,7 @@ export default function DataPage() {
       <h2 style={{marginBottom: '24px'}}>Weekly Performance Summary</h2>
       {loadingAnalytics ? (
         <p style={{color: 'var(--text-secondary)'}}>Calculating weekly analytics...</p>
-      ) : analytics ? (
+      ) : analytics && analytics.dailyStats.length > 0 ? (
         <>
             <div className="results-grid" style={{gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginBottom: '40px'}}>
                 <div className="result-item"><div className="label"><FaCalendarWeek className="icon-small" />Total Weekly Generation</div><div className="result-value color-blue">{(analytics.weeklyStats.totalWeeklyKwh || 0).toFixed(3)} kWh</div></div>
@@ -200,22 +190,19 @@ export default function DataPage() {
                 </tr>
               </thead>
               <tbody>
-                {rawLogs.map((row) => {
-                    const soc = getBatterySOC(row.dc_voltage_v);
-                    return (
-                        <tr key={row.timestamp || Math.random()}>
-                            <td style={{color: 'var(--text-secondary)'}}> {new Date((row.timestamp || 0) * 1000).toLocaleString()} </td>
-                            <td className={`text-right ${(row.dc_power_w || 0) > 0 ? 'color-green' : ''}`}> {(row.dc_power_w || 0).toFixed(2)} </td>
-                            <td className="text-right">{soc.toFixed(1)}</td>
-                            <td className="text-right">{(row.dc_voltage_v || 0).toFixed(2)}</td>
-                            <td className="text-right">{(row.dc_current_ma || 0).toFixed(1)}</td>
-                            <td className="text-right">
-                                {tempUnit === 'C' ? (row.panel_temp_c || 0).toFixed(1) : celsiusToFahrenheit(row.panel_temp_c).toFixed(1)}
-                            </td>
-                            <td className="text-right">{(row.sunlight_lux || 0).toLocaleString()}</td>
-                        </tr>
-                    );
-                })}
+                {rawLogs.map((row) => (
+                    <tr key={row?.timestamp || Math.random()}>
+                        <td style={{color: 'var(--text-secondary)'}}> {new Date((row?.timestamp || 0) * 1000).toLocaleString()} </td>
+                        <td className={`text-right ${(row?.dc_power_w || 0) > 0 ? 'color-green' : ''}`}> {(row?.dc_power_w || 0).toFixed(2)} </td>
+                        <td className="text-right">{getBatterySOC(row?.dc_voltage_v).toFixed(1)}</td>
+                        <td className="text-right">{(row?.dc_voltage_v || 0).toFixed(2)}</td>
+                        <td className="text-right">{(row?.dc_current_ma || 0).toFixed(1)}</td>
+                        <td className="text-right">
+                            {tempUnit === 'C' ? (row?.panel_temp_c || 0).toFixed(1) : celsiusToFahrenheit(row?.panel_temp_c).toFixed(1)}
+                        </td>
+                        <td className="text-right">{(row?.sunlight_lux || 0).toLocaleString()}</td>
+                    </tr>
+                ))}
               </tbody>
             </table>
           </div>
