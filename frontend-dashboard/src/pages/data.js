@@ -5,10 +5,8 @@ import { database, ref, onValue, query, limitToLast, startAt, orderByChild } fro
 import { FaSun, FaBolt, FaThermometerHalf, FaCalendarWeek, FaChartBar, FaTachometerAlt, FaStar } from 'react-icons/fa';
 import { useTemperature } from '../context/TemperatureContext';
 
-// --- HELPER FUNCTIONS ---
-
+// --- HELPER FUNCTIONS (NOW MORE ROBUST) ---
 const getBatterySOC = (voltage) => {
-    // Return a default if voltage is invalid
     if (typeof voltage !== 'number') return 0;
     const voltageMap = [ { v: 11.6, soc: 0 }, { v: 11.8, soc: 20 }, { v: 12.1, soc: 40 }, { v: 12.2, soc: 50 }, { v: 12.4, soc: 70 }, { v: 12.7, soc: 100 } ];
     if (voltage >= voltageMap[voltageMap.length - 1].v) return 100;
@@ -26,18 +24,14 @@ const celsiusToFahrenheit = (c) => {
     return (c * 9/5) + 32;
 };
 
-// --- DATA PROCESSING FOR ANALYTICS (NOW MORE ROBUST) ---
+// --- DATA PROCESSING (REWRITTEN FOR STABILITY) ---
 const processWeeklyData = (data) => {
-    if (!data || data.length === 0) {
-        return null;
-    }
+    if (!data || data.length === 0) return null;
 
     const groupedByDate = data.reduce((acc, log) => {
-        if (!log || typeof log.timestamp !== 'number') return acc; // Skip invalid records
+        if (!log || typeof log.timestamp !== 'number') return acc;
         const date = new Date(log.timestamp * 1000).toISOString().split('T')[0];
-        if (!acc[date]) {
-            acc[date] = [];
-        }
+        if (!acc[date]) acc[date] = [];
         acc[date].push(log);
         return acc;
     }, {});
@@ -57,38 +51,31 @@ const processWeeklyData = (data) => {
                 const prevLog = dayData[i-1];
                 const prevPower = prevLog.dc_power_w || 0;
                 const timeDiffHours = (log.timestamp - prevLog.timestamp) / 3600;
-                const avgPower = (power + prevPower) / 2;
-                if (timeDiffHours > 0 && timeDiffHours < 1) { // Avoid calculating over large gaps
-                    totalGenerationWh += avgPower * timeDiffHours;
+                if (timeDiffHours > 0 && timeDiffHours < 1) {
+                    totalGenerationWh += ((power + prevPower) / 2) * timeDiffHours;
                 }
             }
-
             if (power > peakPowerW) peakPowerW = power;
             if (voltage > maxVoltage) maxVoltage = voltage;
             if (current > maxCurrent) maxCurrent = current;
             tempSum += temp;
         }
 
-        return {
-            date,
-            totalGenerationWh,
-            peakPowerW,
-            maxVoltage,
-            maxCurrent,
-            avgPanelTemp: dayData.length > 0 ? tempSum / dayData.length : 0,
-        };
+        return { date, totalGenerationWh, peakPowerW, maxVoltage, maxCurrent, avgPanelTemp: dayData.length > 0 ? tempSum / dayData.length : 0 };
     }).sort((a,b) => new Date(b.date) - new Date(a.date));
 
+    // *** CRITICAL FIX ***
+    // If after processing, there are no valid daily stats, stop here.
     if (dailyStats.length === 0) return null;
 
     const totalWeeklyGenerationWh = dailyStats.reduce((sum, day) => sum + day.totalGenerationWh, 0);
-    const bestDay = dailyStats.reduce((best, day) => (day.totalGenerationWh || 0) > (best.totalGenerationWh || 0) ? day : best, dailyStats[0]);
+    const bestDay = dailyStats.reduce((best, day) => (day.totalGenerationWh || 0) > (best.totalGenerationWh || 0) ? day : best);
 
     const weeklyStats = {
         totalWeeklyKwh: totalWeeklyGenerationWh / 1000,
         avgDailyWh: totalWeeklyGenerationWh / dailyStats.length,
-        peakGenerationW: Math.max(...dailyStats.map(day => day.peakPowerW || 0)),
-        peakSunlightLux: Math.max(...data.map(log => log.sunlight_lux || 0)),
+        peakGenerationW: Math.max(0, ...dailyStats.map(day => day.peakPowerW || 0)),
+        peakSunlightLux: Math.max(0, ...data.map(log => log.sunlight_lux || 0)),
         bestDayDate: bestDay.date,
         bestDayGenerationWh: bestDay.totalGenerationWh,
     };
@@ -106,6 +93,7 @@ export default function DataPage() {
   const { tempUnit } = useTemperature();
   const MAX_LOGS = 100;
 
+  // Fetcher for raw logs (no changes needed here)
   useEffect(() => {
     const q = query(ref(database, 'solar_telemetry'), limitToLast(MAX_LOGS));
     const unsubscribe = onValue(q, (snapshot) => {
@@ -119,17 +107,15 @@ export default function DataPage() {
     return () => unsubscribe();
   }, []);
 
+  // Fetcher for analytics data
   useEffect(() => {
       const sevenDaysAgoTimestamp = Math.floor((new Date().getTime() / 1000) - (7 * 24 * 60 * 60));
       const q = query(ref(database, 'solar_telemetry'), orderByChild('timestamp'), startAt(sevenDaysAgoTimestamp));
 
       const unsubscribe = onValue(q, (snapshot) => {
           const val = snapshot.val();
-          let processedAnalytics = null;
-          if (val) {
-              const dataArray = Object.values(val);
-              processedAnalytics = processWeeklyData(dataArray);
-          }
+          // Process data only if it exists
+          const processedAnalytics = val ? processWeeklyData(Object.values(val)) : null;
           setAnalytics(processedAnalytics);
           setLoadingAnalytics(false);
       }, (error) => { console.error("Firebase Read Error (Analytics):", error); setLoadingAnalytics(false); });
