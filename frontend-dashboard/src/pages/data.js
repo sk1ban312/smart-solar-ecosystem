@@ -1,10 +1,10 @@
 // File: frontend-dashboard/src/pages/data.js
 import { useState, useEffect, useMemo } from 'react';
 import Layout from '../components/Layout';
-import { database, ref, onValue, query, startAt, orderByChild } from '../firebase';
+import { database, ref, onValue, query, startAt, orderByChild, limitToLast } from 'firebase/database';
 import { FaSun, FaBolt, FaThermometerHalf, FaCalendarDay, FaChartBar, FaTachometerAlt, FaStar, FaUndo } from 'react-icons/fa';
 import { useTemperature } from '../context/TemperatureContext';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, subDays } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subDays } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 // --- HELPER FUNCTIONS ---
@@ -20,45 +20,32 @@ const getBatterySOC = (voltage) => {
     }
     return 0;
 };
+const celsiusToFahrenheit = (c) => (typeof c === 'number' ? (c * 9/5) + 32 : 0);
 
-const celsiusToFahrenheit = (c) => {
-    if (typeof c !== 'number') return 0;
-    return (c * 9/5) + 32;
-};
-
-// --- DATA PROCESSING LOGIC (SINGLE DEFINITION) ---
-const processAnalyticsData = (data, numDays) => {
+// --- DATA PROCESSING (REWRITTEN FOR STABILITY) ---
+const processAnalyticsData = (data) => {
     if (!data || data.length < 2) return null;
 
-    const endDate = new Date();
-    const startDate = subDays(endDate, 34); // Always get enough data for the calendar
-
-    const relevantData = data.filter(log => {
-        if (!log || typeof log.timestamp !== 'number') return false;
-        const logDate = new Date(log.timestamp * 1000);
-        return logDate >= startDate && logDate <= endDate;
-    });
-
-    const groupedByDate = relevantData.reduce((acc, log) => {
-        const date = new Date(log.timestamp * 1000).toISOString().split('T')[0];
-        if (!acc[date]) acc[date] = [];
-        acc[date].push(log);
+    const groupedByDate = data.reduce((acc, log) => {
+        if (log && typeof log.timestamp === 'number') {
+            const date = new Date(log.timestamp * 1000).toISOString().split('T')[0];
+            if (!acc[date]) acc[date] = [];
+            acc[date].push(log);
+        }
         return acc;
     }, {});
 
-    // Full daily stats for the calendar and charts
-    const fullDailyStats = Object.keys(groupedByDate).map(date => {
-        const dayData = groupedByDate[date].sort((a,b) => a.timestamp - b.timestamp);
+    const allDailyStats = Object.keys(groupedByDate).map(date => {
+        const dayData = groupedByDate[date].sort((a, b) => a.timestamp - b.timestamp);
         let totalGenerationWh = 0;
         for (let i = 1; i < dayData.length; i++) {
             const timeDiffHours = (dayData[i].timestamp - dayData[i-1].timestamp) / 3600;
-            if (timeDiffHours > 0 && timeDiffHours < 1) { // Avoid huge gaps
+            if (timeDiffHours > 0 && timeDiffHours < 1) {
                 totalGenerationWh += ((dayData[i].dc_power_w || 0) + (dayData[i-1].dc_power_w || 0)) / 2 * timeDiffHours;
             }
         }
         return {
-            date,
-            totalGenerationWh,
+            date, totalGenerationWh,
             peakPowerW: Math.max(0, ...dayData.map(d => d.dc_power_w || 0)),
             maxVoltage: Math.max(0, ...dayData.map(d => d.dc_voltage_v || 0)),
             maxCurrent: Math.max(0, ...dayData.map(d => d.dc_current_ma || 0)),
@@ -66,25 +53,21 @@ const processAnalyticsData = (data, numDays) => {
         };
     });
 
-    if (fullDailyStats.length === 0) return null;
+    if (allDailyStats.length === 0) return null;
 
-    // Create summary stats for the last 'numDays'
-    const summaryStats = fullDailyStats.filter(stat => {
-        const statDate = new Date(stat.date + "T00:00:00");
-        return statDate >= subDays(endDate, numDays);
-    });
+    const last7DaysStats = allDailyStats.filter(stat => new Date(stat.date) >= subDays(new Date(), 7));
+    if (last7DaysStats.length === 0) return { summary: null, dailyStats: allDailyStats };
 
-    const totalGenerationWh = summaryStats.reduce((sum, day) => sum + day.totalGenerationWh, 0);
-    const avgDailyWh = summaryStats.length > 0 ? totalGenerationWh / summaryStats.length : 0;
+    const totalKwh = last7DaysStats.reduce((sum, day) => sum + day.totalGenerationWh, 0) / 1000;
+    const avgDailyWh = (totalKwh * 1000) / last7DaysStats.length;
+    const peakGenerationW = Math.max(0, ...last7DaysStats.map(d => d.peakPowerW));
 
     const summary = {
-        totalKwh: totalGenerationWh / 1000,
-        avgDailyWh: avgDailyWh,
-        peakGenerationW: Math.max(0, ...summaryStats.map(d => d.peakPowerW)),
-        last7DaysGeneration: summaryStats.slice(0, 7).map(d => ({ name: format(new Date(d.date + 'T00:00:00'), 'MMM d'), generation: d.totalGenerationWh })).reverse()
+        totalKwh, avgDailyWh, peakGenerationW,
+        last7DaysGeneration: last7DaysStats.map(d => ({ name: format(new Date(d.date + 'T00:00:00'), 'MMM d'), generation: d.totalGenerationWh })).reverse()
     };
 
-    return { summary, dailyStats: fullDailyStats };
+    return { summary, dailyStats: allDailyStats };
 };
 
 
@@ -97,15 +80,15 @@ export default function DataPage() {
   const { tempUnit } = useTemperature();
 
   useEffect(() => {
-    const thirtyFiveDaysAgoTimestamp = Math.floor((new Date().getTime() / 1000) - (35 * 24 * 60 * 60));
-    const q = query(ref(database, 'solar_telemetry'), orderByChild('timestamp'), startAt(thirtyFiveDaysAgoTimestamp));
+    const thirtyFiveDaysAgoTimestamp = Math.floor((Date.now() / 1000) - (35 * 24 * 60 * 60));
+    const analyticsQuery = query(ref(database, 'solar_telemetry'), orderByChild('timestamp'), startAt(thirtyFiveDaysAgoTimestamp));
 
-    const unsubscribe = onValue(q, (snapshot) => {
+    const unsubscribe = onValue(analyticsQuery, (snapshot) => {
         const val = snapshot.val();
         if (val) {
             const dataArray = Object.values(val);
             setAllData(dataArray);
-            setAnalytics(processAnalyticsData(dataArray, 7));
+            setAnalytics(processAnalyticsData(dataArray));
         }
         setLoading(false);
     }, (error) => {
@@ -117,17 +100,13 @@ export default function DataPage() {
 
   const logsToDisplay = useMemo(() => {
     if (selectedDate) {
-      return allData.filter(log => isSameDay(new Date(log.timestamp * 1000), selectedDate)).sort((a,b) => b.timestamp - a.timestamp);
+      return allData.filter(log => log && isSameDay(new Date(log.timestamp * 1000), selectedDate)).sort((a,b) => b.timestamp - a.timestamp);
     }
     return [...allData].sort((a,b) => b.timestamp - a.timestamp).slice(0, 100);
   }, [selectedDate, allData]);
 
-  const handleDateClick = (date) => {
-      setSelectedDate(prev => (prev && isSameDay(prev, date)) ? null : date);
-  };
-
   return (
-    <Layout title="Data & Analytics - Solar Ecosystem">
+    <Layout title="Data & Analytics">
       <div style={{ textAlign: 'center', paddingTop: '50px', paddingBottom: '70px' }}>
         <h1 style={{ fontSize: '56px', fontWeight: 600 }}>Data & Analytics</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '24px', marginTop: '8px' }}>
@@ -135,30 +114,24 @@ export default function DataPage() {
         </p>
       </div>
 
-      {loading ? (
-        <p style={{color: 'var(--text-secondary)', textAlign: 'center'}}>Loading historical analytics...</p>
-      ) : analytics ? (
+      {loading ? ( <p style={{textAlign: 'center'}}>Loading historical analytics...</p>
+      ) : (analytics && analytics.summary) ? (
         <>
           <KeyPerformanceIndicators stats={analytics.summary} />
-          <InteractiveCalendar dailyStats={analytics.dailyStats} onDateClick={handleDateClick} selectedDate={selectedDate} />
+          <InteractiveCalendar dailyStats={analytics.dailyStats} selectedDate={selectedDate} onDateClick={setSelectedDate} />
         </>
       ) : (
-        <div className="card" style={{marginBottom: '60px', textAlign: 'center', padding: '40px'}}>
-            <p style={{color: 'var(--text-secondary)', margin: 0}}>Not enough data to generate analytics. Check back later.</p>
-        </div>
+        <div className="card" style={{marginBottom: '40px', textAlign: 'center'}}><p>No performance data from the last 7 days to display.</p></div>
       )}
 
-      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-        <h2 style={{marginBottom: '24px', marginTop: '60px'}}>
-            {selectedDate ? `Telemetry Log for ${format(selectedDate, 'MMMM d, yyyy')}` : 'Latest Telemetry Log'}
-        </h2>
+      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '60px'}}>
+        <h2>{selectedDate ? `Telemetry Log for ${format(selectedDate, 'MMMM d, yyyy')}` : 'Latest Telemetry Log'}</h2>
         {selectedDate && <button className="btn-secondary" onClick={() => setSelectedDate(null)}><FaUndo style={{marginRight: '8px'}}/>Show Latest</button>}
       </div>
       <TelemetryLog logs={logsToDisplay} tempUnit={tempUnit} />
     </Layout>
   );
 }
-
 
 // --- SUB-COMPONENTS ---
 
@@ -169,9 +142,9 @@ const KeyPerformanceIndicators = ({ stats }) => (
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={stats.last7DaysGeneration} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
                         <XAxis dataKey="name" stroke="var(--text-secondary)" fontSize={12} tickLine={false} axisLine={false}/>
-                        <YAxis stroke="var(--text-secondary)" fontSize={12} tickLine={false} axisLine={false}/>
-                        <Tooltip cursor={{fill: 'rgba(233, 233, 236, 0.7)'}} contentStyle={{background: 'var(--background)', border: '1px solid var(--border-color)', borderRadius: '12px'}}/>
-                        <Bar dataKey="generation" fill="#8884d8" radius={[4, 4, 0, 0]}>
+                        <YAxis stroke="var(--text-secondary)" fontSize={12} tickLine={false} axisLine={false} width={40}/>
+                        <Tooltip contentStyle={{background: 'var(--background)', border: '1px solid var(--border-color)', borderRadius: '12px'}}/>
+                        <Bar dataKey="generation" name="Wh Gen." radius={[4, 4, 0, 0]}>
                             {stats.last7DaysGeneration.map((entry, index) => (
                                 <Cell key={`cell-${index}`} fill={entry.generation > stats.avgDailyWh * 1.1 ? 'var(--accent-green)' : 'var(--accent-blue)'}/>
                             ))}
@@ -180,52 +153,35 @@ const KeyPerformanceIndicators = ({ stats }) => (
                 </ResponsiveContainer>
             </div>
             <div className="result-item" style={{border: 'none', padding: 0}}><div className="label"><FaCalendarDay className="icon-small"/>7-Day Generation</div><div className="result-value color-blue">{stats.totalKwh.toFixed(3)} kWh</div></div>
-            <div className="result-item" style={{border: 'none', padding: 0}}><div className="label"><FaChartBar className="icon-small"/>Avg. Daily Yield</div><div className="result-value"> {stats.avgDailyWh.toFixed(1)} Wh</div></div>
+            <div className="result-item" style={{border: 'none', padding: 0}}><div className="label"><FaChartBar className="icon-small"/>Avg. Daily Yield</div><div className="result-value">{stats.avgDailyWh.toFixed(1)} Wh</div></div>
             <div className="result-item" style={{border: 'none', padding: 0}}><div className="label"><FaTachometerAlt className="icon-small"/>Peak Power</div><div className="result-value color-green">{stats.peakGenerationW.toFixed(1)} W</div></div>
         </div>
     </div>
 );
 
-const InteractiveCalendar = ({ dailyStats, onDateClick, selectedDate }) => {
+const InteractiveCalendar = ({ dailyStats, selectedDate, onDateClick }) => {
     const today = new Date();
     const startOfCalendar = startOfMonth(subDays(today, 34));
-    const endOfCalendar = endOfMonth(today);
-    const days = eachDayOfInterval({ start: startOfCalendar, end: endOfCalendar });
+    const days = eachDayOfInterval({ start: startOfCalendar, end: endOfMonth(today) });
 
     const getGenerationColor = (gen) => {
-        if (gen > 10) return '#2ca02c'; // Dark Green
-        if (gen > 5) return '#86c686'; // Green
-        if (gen > 1) return '#c8e2c8'; // Light Green
-        return '#f0f0f0';
+        if (gen > 10) return '#2ca02c'; if (gen > 5) return '#86c686'; if (gen > 1) return '#c8e2c8'; return '#f0f0f0';
     };
 
     return (
         <div className="card" style={{marginTop: '40px'}}>
             <h2 style={{marginBottom: '24px'}}>Daily Generation Calendar (Wh)</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '1px', backgroundColor: 'var(--border-color)', border: '1px solid var(--border-color)'}}>
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => <div key={day} style={{textAlign: 'center', fontWeight: 600, padding: '8px', background: 'var(--surface)'}}>{day}</div>)}
-                {days.map((day, index) => {
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => <div key={d} style={{textAlign: 'center', fontWeight: 600, padding: '8px', background: 'var(--surface)'}}>{d}</div>)}
+                {days.map((day) => {
                     const stat = dailyStats.find(d => isSameDay(new Date(d.date + 'T00:00:00'), day));
-                    const generation = stat ? stat.totalGenerationWh : -1;
                     const isSelected = selectedDate && isSameDay(selectedDate, day);
-
                     return (
-                        <div key={index}
-                             onClick={() => stat && onDateClick(day)}
+                        <div key={day.toString()} onClick={() => stat && onDateClick(isSelected ? null : day)}
                              title={stat ? `${stat.totalGenerationWh.toFixed(1)} Wh Generated` : 'No Data'}
-                             style={{
-                                minHeight: '80px', padding: '8px',
-                                backgroundColor: generation >= 0 ? getGenerationColor(generation) : '#fafafa',
-                                cursor: stat ? 'pointer' : 'default',
-                                border: isSelected ? '2px solid var(--accent-blue)' : 'none',
-                                filter: generation < 0 ? 'brightness(0.95)' : 'none',
-                                transition: 'transform 0.2s ease',
-                             }}
-                             onMouseOver={e => { if (stat) e.currentTarget.style.transform = 'scale(1.05)'; }}
-                             onMouseOut={e => { e.currentTarget.style.transform = 'scale(1)'; }}
-                        >
+                             style={{ minHeight: '80px', padding: '8px', backgroundColor: stat ? getGenerationColor(stat.totalGenerationWh) : '#fafafa', cursor: stat ? 'pointer' : 'default', border: isSelected ? '2px solid var(--accent-blue)' : 'none', filter: !stat ? 'brightness(0.95)' : 'none' }}>
                             <span style={{fontWeight: 600, color: isSameDay(day, today) ? 'var(--accent-blue)' : 'inherit'}}>{format(day, 'd')}</span>
-                            {generation >= 0 && <div style={{fontWeight: 700, fontSize: '18px', marginTop: '8px'}}>{generation.toFixed(1)}</div>}
+                            {stat && <div style={{fontWeight: 700, fontSize: '18px', marginTop: '8px'}}>{stat.totalGenerationWh.toFixed(1)}</div>}
                         </div>
                     );
                 })}
@@ -238,9 +194,7 @@ const TelemetryLog = ({ logs, tempUnit }) => (
     <div className="table-container">
       <table className="data-table">
         <thead>
-          <tr>
-            <th>Timestamp</th><th className="text-right">Power (W)</th><th className="text-right">SOC (%)</th><th className="text-right">Voltage (V)</th><th className="text-right">Current (mA)</th><th className="text-right">Temp (°{tempUnit})</th><th className="text-right">Lux</th>
-          </tr>
+          <tr><th>Timestamp</th><th className="text-right">Power (W)</th><th className="text-right">SOC (%)</th><th className="text-right">Voltage (V)</th><th className="text-right">Current (mA)</th><th className="text-right">Temp (°{tempUnit})</th><th className="text-right">Lux</th></tr>
         </thead>
         <tbody>
           {logs && logs.length > 0 ? logs.map((row, i) => (
