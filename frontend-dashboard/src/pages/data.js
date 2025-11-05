@@ -21,9 +21,14 @@ const getBatterySOC = (voltage) => {
 
 const celsiusToFahrenheit = (c) => (c * 9/5) + 32;
 
-// --- NEW: DATA PROCESSING FOR ANALYTICS ---
+// --- DATA PROCESSING FOR ANALYTICS ---
 const processWeeklyData = (data) => {
-    // 1. Group all data points by date
+    // --- FIX: ADDED GUARD CLAUSE ---
+    // If there's no data or the array is empty, stop immediately.
+    if (!data || data.length === 0) {
+        return null;
+    }
+
     const groupedByDate = data.reduce((acc, log) => {
         const date = new Date(log.timestamp * 1000).toISOString().split('T')[0];
         if (!acc[date]) {
@@ -33,7 +38,6 @@ const processWeeklyData = (data) => {
         return acc;
     }, {});
 
-    // 2. Calculate statistics for each day
     const dailyStats = Object.keys(groupedByDate).map(date => {
         const dayData = groupedByDate[date].sort((a, b) => a.timestamp - b.timestamp);
         let totalGenerationWh = 0;
@@ -45,16 +49,13 @@ const processWeeklyData = (data) => {
         for (let i = 0; i < dayData.length; i++) {
             const log = dayData[i];
 
-            // Calculate energy generated since the last data point
             if (i > 0) {
                 const prevLog = dayData[i-1];
                 const timeDiffHours = (log.timestamp - prevLog.timestamp) / 3600;
-                // Use the average power between the two points for better accuracy
                 const avgPower = (log.dc_power_w + prevLog.dc_power_w) / 2;
                 totalGenerationWh += avgPower * timeDiffHours;
             }
 
-            // Find max values
             if (log.dc_power_w > peakPowerW) peakPowerW = log.dc_power_w;
             if (log.dc_voltage_v > maxVoltage) maxVoltage = log.dc_voltage_v;
             if (log.dc_current_ma > maxCurrent) maxCurrent = log.dc_current_ma;
@@ -67,11 +68,11 @@ const processWeeklyData = (data) => {
             peakPowerW,
             maxVoltage,
             maxCurrent,
-            avgPanelTemp: tempSum / dayData.length,
+            avgPanelTemp: dayData.length > 0 ? tempSum / dayData.length : 0,
         };
-    }).sort((a,b) => new Date(b.date) - new Date(a.date)); // Sort with most recent day first
+    }).sort((a,b) => new Date(b.date) - new Date(a.date));
 
-    // 3. Calculate overall weekly stats from daily stats
+    // --- FIX: ADDED CHECK FOR EMPTY dailyStats ---
     if (dailyStats.length === 0) return null;
 
     const totalWeeklyGenerationWh = dailyStats.reduce((sum, day) => sum + day.totalGenerationWh, 0);
@@ -95,15 +96,12 @@ const processWeeklyData = (data) => {
 export default function DataPage() {
   const [rawLogs, setRawLogs] = useState([]);
   const [loadingRaw, setLoadingRaw] = useState(true);
-
-  // New state for our analytics
   const [analytics, setAnalytics] = useState(null);
   const [loadingAnalytics, setLoadingAnalytics] = useState(true);
 
   const { tempUnit } = useTemperature();
   const MAX_LOGS = 100;
 
-  // Effect for fetching latest 100 raw logs (for the bottom table)
   useEffect(() => {
     const q = query(ref(database, 'solar_telemetry'), limitToLast(MAX_LOGS));
     const unsubscribe = onValue(q, (snapshot) => {
@@ -117,7 +115,6 @@ export default function DataPage() {
     return () => unsubscribe();
   }, []);
 
-  // New effect for fetching and processing the last 7 days of data for analytics
   useEffect(() => {
       const sevenDaysAgoTimestamp = Math.floor((new Date().getTime() / 1000) - (7 * 24 * 60 * 60));
       const q = query(ref(database, 'solar_telemetry'), orderByChild('timestamp'), startAt(sevenDaysAgoTimestamp));
@@ -136,7 +133,7 @@ export default function DataPage() {
 
 
   return (
-    <Layout title="Telemetry Log - Solar Ecosystem">
+    <Layout title="Data & Analytics - Solar Ecosystem">
       <div style={{ textAlign: 'center', paddingTop: '50px', paddingBottom: '70px' }}>
         <h1 style={{ fontSize: '56px', fontWeight: 600 }}>Data & Analytics</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '24px', marginTop: '8px' }}>
@@ -144,13 +141,11 @@ export default function DataPage() {
         </p>
       </div>
 
-      {/* --- NEW ANALYTICS SECTION --- */}
       <h2 style={{marginBottom: '24px'}}>Weekly Performance Summary</h2>
       {loadingAnalytics ? (
         <p style={{color: 'var(--text-secondary)'}}>Calculating weekly analytics...</p>
       ) : analytics ? (
         <>
-            {/* Summary Cards */}
             <div className="results-grid" style={{gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginBottom: '40px'}}>
                 <div className="result-item"><div className="label"><FaCalendarWeek className="icon-small" />Total Weekly Generation</div><div className="result-value color-blue">{analytics.weeklyStats.totalWeeklyKwh.toFixed(3)} kWh</div></div>
                 <div className="result-item"><div className="label"><FaChartBar className="icon-small" />Avg. Daily Generation</div><div className="result-value">{analytics.weeklyStats.avgDailyWh.toFixed(1)} Wh</div></div>
@@ -159,7 +154,6 @@ export default function DataPage() {
                 <div className="result-item"><div className="label"><FaSun className="icon-small" />Peak Sunlight</div><div className="result-value">{analytics.weeklyStats.peakSunlightLux.toLocaleString()} Lux</div></div>
             </div>
 
-            {/* Daily Breakdown Table */}
             <h2 style={{marginBottom: '24px'}}>Daily Breakdown</h2>
             <div className="table-container" style={{marginBottom: '60px'}}>
                 <table className="data-table">
@@ -191,11 +185,12 @@ export default function DataPage() {
             </div>
         </>
       ) : (
-        <p style={{color: 'var(--text-secondary)'}}>Not enough data from the last 7 days to generate analytics.</p>
+        <div className="card" style={{marginBottom: '60px', textAlign: 'center', padding: '40px'}}>
+            <p style={{color: 'var(--text-secondary)', margin: 0}}>Not enough data from the last 7 days to generate analytics.</p>
+        </div>
       )}
 
 
-      {/* --- EXISTING TELEMETRY LOG --- */}
       <h2 style={{marginBottom: '24px'}}>Live Telemetry Log</h2>
       {loadingRaw ? (
           <p style={{color: 'var(--text-secondary)'}}>Loading latest data points...</p>
