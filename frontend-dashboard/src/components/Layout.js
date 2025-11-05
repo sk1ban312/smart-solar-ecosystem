@@ -54,15 +54,12 @@ const Layout = ({ children, title = 'UET Solar Ecosystem' }) => {
             <Link href="/financial" className={isActive('/financial')}>Financial</Link>
           </div>
 
-          {/* --- NEW TEMPERATURE TOGGLE BUTTON --- */}
-          <div style={{ width: '80px', textAlign: 'right' }}>
-             <button
-                onClick={toggleTempUnit}
-                className="btn-secondary"
-                style={{ padding: '5px 12px', color: '#FFF', background: '#333' }}
-             >
-                °{tempUnit === 'C' ? 'F' : 'C'}
-            </button>
+          {/* --- NEW & IMPROVED TEMPERATURE TOGGLE SWITCH --- */}
+          <div style={{ width: '80px', display: 'flex', justifyContent: 'flex-end' }}>
+             <div className="temp-toggle" onClick={toggleTempUnit}>
+                <span className={tempUnit === 'C' ? 'active' : ''}>°C</span>
+                <span className={tempUnit === 'F' ? 'active' : ''}>°F</span>
+             </div>
           </div>
         </div>
       </nav>

@@ -72,7 +72,7 @@ export default function Dashboard() {
   };
 
 
-  if (!data) return <Layout><div style={{textAlign:'center', marginTop:'100px', color:'var(--text-secondary)'}}><h1>Awaiting Sensor Data...</h1></div></Layout>;
+  if (!data) return <Layout><div style={{textAlign:'center', marginTop:'100_px', color:'var(--text-secondary)'}}><h1>Awaiting Sensor Data...</h1></div></Layout>;
 
   const socColor = data.battery_soc_perc > 30 ? 'color-green' : 'color-red';
   const batteryFillColor = data.battery_soc_perc > 30 ? 'var(--accent-green)' : 'var(--accent-red)';
@@ -89,6 +89,7 @@ export default function Dashboard() {
 
       <div className="grid">
         <div className="col-6" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* Battery SOC Card */}
           <div className="card">
             <div style={{display:'flex', flexDirection:'row', alignItems:'center', justifyContent:'space-between'}}>
               <div>
@@ -106,6 +107,7 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
+          {/* Panel Power Output Card */}
           <div className="card">
             <div className="label"><FaSun className="icon-small" /> Panel Power Output</div>
             <div className={`metric-hero ${data.dc_power_w > 0 ? 'color-green' : ''}`}>
@@ -115,6 +117,7 @@ export default function Dashboard() {
                 {data.dc_voltage_v.toFixed(2)}V at {data.dc_current_ma.toFixed(0)}mA
             </p>
           </div>
+          {/* Sensor Telemetry Card */}
           <div className="card">
             <h2>Sensor Telemetry</h2>
             <div className="data-row">
@@ -135,6 +138,7 @@ export default function Dashboard() {
         </div>
 
         <div className="col-6" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* Washington DC Weather Card */}
           <div className="card">
             <h2>Washington DC Weather</h2>
             {weatherObs ? (
@@ -156,6 +160,7 @@ export default function Dashboard() {
             ) : ( <p className="color-red" style={{fontSize:'14px'}}>Weather data loading or API call failed.</p> )}
           </div>
 
+          {/* System Intelligence Card */}
           <div className="card" style={{flexGrow: 1}}>
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px'}}>
               <h2 style={{margin:0}}>System Intelligence</h2>

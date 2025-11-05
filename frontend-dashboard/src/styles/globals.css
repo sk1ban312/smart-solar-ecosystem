@@ -449,3 +449,32 @@ h2 { font-size: 24px; font-weight: 600; margin: 0 0 16px 0; color: var(--text-pr
   overflow-x: auto; /* This is the key change: enables horizontal scrolling */
   -webkit-overflow-scrolling: touch; /* Improves scrolling feel on iOS devices */
 }
+/* ... (keep all your existing CSS above this line) ... */
+
+/* -----------------------------------------------------------------
+   TEMPERATURE TOGGLE SWITCH (NAVBAR)
+   ----------------------------------------------------------------- */
+.temp-toggle {
+  display: flex;
+  border: 1px solid #555;
+  border-radius: 980px;
+  cursor: pointer;
+  background-color: #333;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px;
+}
+
+.temp-toggle span {
+  padding: 4px 10px;
+  border-radius: 980px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  opacity: 0.7;
+}
+
+.temp-toggle span.active {
+  background-color: #f5f5f7;
+  color: #1d1d1f;
+  opacity: 1.0;
+}
