@@ -1,11 +1,14 @@
 // File: frontend-dashboard/src/pages/data.js
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
-import { database, ref, onValue, query, limitToLast, startAt, orderByChild } from '../firebase';
+// *** CRITICAL FIX: Import ALL necessary functions directly from Firebase libraries ***
+import { database, ref, onValue, query, limitToLast } from '../firebase';
+import { startAt, orderByChild } from 'firebase/database'; // <-- This was the missing import
+// ---
 import { FaSun, FaBolt, FaThermometerHalf, FaCalendarWeek, FaChartBar, FaTachometerAlt, FaStar } from 'react-icons/fa';
 import { useTemperature } from '../context/TemperatureContext';
 
-// --- HELPER FUNCTIONS ---
+// --- HELPER FUNCTIONS (NOW MORE ROBUST) ---
 const getBatterySOC = (voltage) => {
     if (typeof voltage !== 'number') return 0;
     const voltageMap = [ { v: 11.6, soc: 0 }, { v: 11.8, soc: 20 }, { v: 12.1, soc: 40 }, { v: 12.2, soc: 50 }, { v: 12.4, soc: 70 }, { v: 12.7, soc: 100 } ];
@@ -37,40 +40,39 @@ const processWeeklyData = (data) => {
         return acc;
     }, {});
 
-    let dailyStats = Object.keys(groupedByDate).map(date => {
+    const dailyStats = Object.keys(groupedByDate).map(date => {
         const dayData = groupedByDate[date].sort((a, b) => a.timestamp - b.timestamp);
-        let totalGenerationWh = 0, peakPowerW = 0, maxVoltage = 0, maxCurrent = 0, tempSum = 0;
+        let totalGenerationWh = 0, peakPowerW = 0, maxVoltage = 0, maxCurrent = 0, tempSum = 0, validLogs = 0;
 
         for (let i = 1; i < dayData.length; i++) {
             const log = dayData[i];
             const prevLog = dayData[i-1];
-            const power = log.dc_power_w || 0;
-            const prevPower = prevLog.dc_power_w || 0;
-            const timeDiffHours = (log.timestamp - prevLog.timestamp) / 3600;
 
+            const power = log.dc_power_w || 0;
+            const voltage = log.dc_voltage_v || 0;
+            const current = log.dc_current_ma || 0;
+            const temp = log.panel_temp_c; // Can be null
+            const prevPower = prevLog.dc_power_w || 0;
+
+            const timeDiffHours = (log.timestamp - prevLog.timestamp) / 3600;
             if (timeDiffHours > 0 && timeDiffHours < 1) {
                 totalGenerationWh += ((power + prevPower) / 2) * timeDiffHours;
             }
             if (power > peakPowerW) peakPowerW = power;
-            if ((log.dc_voltage_v || 0) > maxVoltage) maxVoltage = log.dc_voltage_v;
-            if ((log.dc_current_ma || 0) > maxCurrent) maxCurrent = log.dc_current_ma;
-            tempSum += (log.panel_temp_c || 0);
+            if (voltage > maxVoltage) maxVoltage = voltage;
+            if (current > maxCurrent) maxCurrent = current;
+            if (typeof temp === 'number') {
+                tempSum += temp;
+                validLogs++;
+            }
         }
-        return { date, totalGenerationWh, peakPowerW, maxVoltage, maxCurrent, avgPanelTemp: dayData.length > 0 ? tempSum / dayData.length : 0 };
-    });
+        return { date, totalGenerationWh, peakPowerW, maxVoltage, maxCurrent, avgPanelTemp: validLogs > 0 ? tempSum / validLogs : 0 };
+    }).sort((a,b) => new Date(b.date) - new Date(a.date));
 
     if (dailyStats.length === 0) return null;
 
-    dailyStats.sort((a,b) => new Date(b.date) - new Date(a.date));
-
     const totalWeeklyGenerationWh = dailyStats.reduce((sum, day) => sum + day.totalGenerationWh, 0);
-
-    let bestDay = { totalGenerationWh: -1 };
-    for (const day of dailyStats) {
-        if (day.totalGenerationWh > bestDay.totalGenerationWh) {
-            bestDay = day;
-        }
-    }
+    const bestDay = [...dailyStats].sort((a, b) => b.totalGenerationWh - a.totalGenerationWh)[0];
 
     const weeklyStats = {
         totalWeeklyKwh: totalWeeklyGenerationWh / 1000,
@@ -84,6 +86,7 @@ const processWeeklyData = (data) => {
     return { weeklyStats, dailyStats };
 };
 
+
 export default function DataPage() {
   const [rawLogs, setRawLogs] = useState([]);
   const [loadingRaw, setLoadingRaw] = useState(true);
@@ -94,6 +97,21 @@ export default function DataPage() {
   const MAX_LOGS = 100;
 
   useEffect(() => {
+    // This combined effect handles all data fetching and prevents race conditions.
+    const sevenDaysAgoTimestamp = Math.floor((Date.now() / 1000) - (7 * 24 * 60 * 60));
+
+    // Query for analytics data (last 7 days)
+    const analyticsQuery = query(ref(database, 'solar_telemetry'), orderByChild('timestamp'), startAt(sevenDaysAgoTimestamp));
+    const unsubscribeAnalytics = onValue(analyticsQuery, (snapshot) => {
+        const val = snapshot.val();
+        setAnalytics(val ? processWeeklyData(Object.values(val)) : null);
+        setLoadingAnalytics(false);
+    }, (error) => {
+        console.error("Firebase Analytics Error:", error);
+        setLoadingAnalytics(false);
+    });
+
+    // Query for raw log data (last 100 entries)
     const rawQuery = query(ref(database, 'solar_telemetry'), limitToLast(MAX_LOGS));
     const unsubscribeRaw = onValue(rawQuery, (snapshot) => {
       const val = snapshot.val();
@@ -101,19 +119,12 @@ export default function DataPage() {
       setLoadingRaw(false);
     });
 
-    const sevenDaysAgoTimestamp = Math.floor((new Date().getTime() / 1000) - (7 * 24 * 60 * 60));
-    const analyticsQuery = query(ref(database, 'solar_telemetry'), orderByChild('timestamp'), startAt(sevenDaysAgoTimestamp));
-    const unsubscribeAnalytics = onValue(analyticsQuery, (snapshot) => {
-        const val = snapshot.val();
-        setAnalytics(val ? processWeeklyData(Object.values(val)) : null);
-        setLoadingAnalytics(false);
-    });
-
+    // Cleanup function to stop listeners when the component unmounts
     return () => {
-        unsubscribeRaw();
         unsubscribeAnalytics();
+        unsubscribeRaw();
     };
-  }, []);
+  }, []); // Empty dependency array means this runs only once on component mount
 
   return (
     <Layout title="Data & Analytics - Solar Ecosystem">
