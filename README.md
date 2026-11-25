@@ -1,114 +1,113 @@
-# Smart Solar Ecosystem & Analytics Dashboard
+<a href="https://smart-solar-ecosystem.vercel.app/"><img src="assets/solar-banner.png" alt="Smart Solar Ecosystem. A 20 W off-grid solar station with live ESP32 telemetry, a cloud dashboard, AI forecasts and a payback calculator" width="100%"></a>
 
-### [View Live Demo](https://smart-solar-ecosystem.vercel.app/)
+<p align="center"><a href="https://smart-solar-ecosystem.vercel.app/"><img src="assets/button-dashboard.png" alt="Open the live dashboard" height="46"></a></p>
 
-A full-stack IoT application that monitors a real-world solar panel, predicts energy generation using AI, and calculates financial viability.
+<p align="center">A small off-grid solar station that reports on itself.<br>It measures its own panel and battery, sends the data to the cloud and shows it on a web dashboard<br>with an AI forecast and a payback calculator.</p>
 
-![Project Showcase](https://github.com/sk1ban312/smart-solar-ecosystem/raw/4dc03d75bd6b2709702faebef4b9f1937f8f9531/documentation/project-assets/Home%20page.png)
-*A showcase of the project's key interfaces: the live dashboard, historical data log, and interactive financial calculator.*
+## The idea in 30 seconds
 
----
+A typical small solar kit, with a panel, a battery and an inverter, tells you nothing about itself. We added sensors and a small Wi-Fi computer (an ESP32), so the station now:
 
-## About The Project
+1. **Measures** panel power, battery voltage, temperature and sunlight.
+2. **Sends** the readings over Wi-Fi to a cloud database (Firebase).
+3. **Shows** them on a web dashboard: live output, battery charge and history by day.
+4. **Predicts** today's energy from the weather forecast, using an AI model (OpenAI).
+5. **Calculates** savings, payback time and return on investment.
 
-Our project is a smart solar energy monitoring and management system that takes a standard setup — solar panel, inverter, and battery — and upgrades it into an intelligent, connected platform. We installed sensors to measure current, voltage, battery temperature, and sunlight intensity, feeding this data into an ESP32 microcontroller. The microcontroller processes these readings and sends them via Wi-Fi to a cloud server.
+## The dashboard
 
-From there, the information is displayed in a custom-built web dashboard with a live feed that shows how much energy the panel is generating, the state of charge of the battery, and environmental conditions in real time. The system also integrates an AI model that uses weather forecasts and historical data to predict how much energy the panel will produce, while a financial module calculates monthly savings, payback time, and return on investment.
+<img src="assets/solar-dashboard.png" alt="Dashboard home page: battery charge, panel power, sensor readings, Washington DC weather and the AI prediction" width="100%">
 
-This project demonstrates a scalable ecosystem combining hardware, software, AI, and financial modeling.
+<table>
+  <tr>
+    <td width="50%"><img src="assets/solar-data.png" alt="History page: energy by day"></td>
+    <td width="50%"><img src="assets/solar-financial.png" alt="Financial page: payback calculator"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>History: energy by day</sub></td>
+    <td align="center"><sub>Payback calculator</sub></td>
+  </tr>
+</table>
 
-## System Architecture
+<sub>The station is packed away for now, so the live site shows its last stored reading. These screenshots come from the dashboard's own code running on demo sensor data; the financial figures come from the dashboard's own calculator.</sub>
 
-The system is composed of two primary domains: the physical hardware for data collection and the cloud software for processing, analysis, and presentation.
+The calculator also shows why size matters. At $0.25 per kWh the 20 W prototype pays back in about 14.5 years, while the 20 kW commercial scenario in the financial model pays back in about 6.
 
-*   **[Hardware & IoT Data Flow (Diagram 1)](https://github.com/sk1ban312/smart-solar-ecosystem/blob/4dc03d75bd6b2709702faebef4b9f1937f8f9531/documentation/project-assets/Physical_components-Page-1.drawio%20(1).png)**: The flow of data from the physical sensors to the cloud database.
-*   **[Web Application & Cloud Architecture (Diagram 2)](https://github.com/sk1ban312/smart-solar-ecosystem/blob/4dc03d75bd6b2709702faebef4b9f1937f8f9531/documentation/project-assets/Web%20and%20Cloud.drawio.pdf)**: The interaction between the user, frontend, backend API, and external services.
+## How it works
 
-## Hardware Components & Workflow
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/solar-how-it-works-dark.png">
+  <img src="assets/solar-how-it-works-light.png" alt="Top row: sun, 20 W solar panel, charge controller, 12 V battery, 150 W inverter, phone and USB loads. Bottom row: sensors, ESP32, Firebase, web dashboard on Vercel and a Flask API that uses weather.gov and OpenAI." width="100%">
+</picture>
 
-The physical prototype was built using the following off-the-shelf components to create a robust data collection pipeline:
+The top row is the energy path. The bottom row is the data path.
 
-*   **1. Solar Panel (`SOLPERK 20W Solar Panel Kit`):** Generates DC electricity from sunlight.
-*   **2. Battery (`ExpertPower 12V 8AH SLA`):** Stores excess energy generated by the panel.
-*   **3. Power Inverter (`150W Power Inverter`):** Converts the battery's 12V DC power to 110V AC.
-*   **4. Microcontroller (`ESP32`):** The core of the system. It collects sensor data, processes it, and sends it to the cloud via its built-in Wi-Fi.
-*   **5. Current/Voltage Sensor (`HiLetgo INA219`):** A bi-directional I2C sensor that precisely measures power flow (voltage and current) from the solar panel.
-*   **6. Temperature Sensor (`BOJACK DS18B20 Waterproof`):** Monitors the ambient temperature of the system components.
-*   **7. Buck Converter (`HiLetgo 2pcs LM2596`):** Steps down the voltage to safely power the microcontroller and sensors from the main battery.
+## Hardware
 
-## Technology Stack & APIs
+| Part | Model | What it does |
+|---|---|---|
+| Solar panel | SOLPERK 20 W kit | Makes DC electricity from sunlight |
+| Charge controller | Included in the kit | Charges the battery safely |
+| Battery | ExpertPower 12 V, 8 Ah, sealed lead-acid | Stores the energy |
+| Inverter | 150 W | Turns 12 V DC into 110 V AC and USB power |
+| Microcontroller | ESP32 | Reads the sensors and sends the data over Wi-Fi |
+| Current and voltage sensor | HiLetgo INA219 | Measures the power coming from the panel |
+| Temperature sensor | BOJACK DS18B20, waterproof | Measures the temperature of the system |
+| Light sensor | Lux sensor module | Measures sunlight |
+| Buck converter | HiLetgo LM2596 | Powers the electronics from the main battery |
 
-This project leverages a modern, full-stack architecture to deliver a seamless experience from hardware to browser.
+## Built with
 
-*   **Frontend:**
-    *   **Framework:** Next.js / React.js
-    *   **Styling:** CSS Modules with a custom theme
-    *   **Data Fetching:** Axios for REST API communication
-*   **Backend:**
-    *   **Framework:** Python Flask
-    *   **Hosting:** Google Cloud Platform (GCP)
-    *   **API Design:** RESTful principles for clear client-server communication
-    *   **WSGI Server:** Gunicorn
-*   **Database:**
-    *   **Service:** Google Firebase (Realtime Database) for live, low-latency data synchronization.
-*   **Platforms & APIs:**
-    *   **Deployment:** The frontend is deployed and hosted on **Vercel**, which is directly linked to this GitHub repository for seamless Continuous Deployment.
-    *   **AI & Machine Learning:** OpenAI API (GPT-3.5 Turbo) for weather-based generation forecasting.
-    *   **External Data:** National Weather Service (weather.gov) API for real-time weather data.
+| Layer | Tools |
+|---|---|
+| Device | ESP32 (Arduino), INA219, DS18B20 |
+| Cloud | Firebase Realtime Database; a Flask API in Docker on Google Cloud |
+| Website | Next.js and React on Vercel, Recharts; every push to `main` redeploys the site |
+| Data and AI | National Weather Service API for the forecast, OpenAI GPT-3.5 Turbo for the prediction |
 
-## Development Workflow
+## What is in this repository
 
-This project was managed using professional development practices to ensure code quality and efficient deployment.
+| Folder | What is inside |
+|---|---|
+| [frontend-dashboard/](frontend-dashboard/) | The Next.js dashboard: live data, history and the payback calculator |
+| [backend-api/](backend-api/) | The Flask API for the weather forecast and the AI prediction |
+| [documentation/](documentation/) | System diagrams and the original screenshots |
 
-*   **Version Control:** Git was used for version control, with **GitHub Desktop** providing a streamlined GUI for commits, pushes, and branch management.
-*   **Continuous Deployment:** The `main` branch of this repository is linked to Vercel. Every push to `main` automatically triggers a new build and deployment of the frontend application, ensuring the live demo is always up-to-date.
-*   **API Management:** The backend Flask API is containerized using Docker and is designed to be deployed on any cloud platform. Environment variables are used for sensitive keys (like the OpenAI key) to maintain security best practices.
+<details>
+<summary><b>Run it yourself</b></summary>
 
-## Getting Started
+You need Node.js 18 or later, Python 3.9 or later, a Firebase project and an OpenAI API key.
 
-To get a local copy up and running, follow these simple steps.
+**Dashboard** (`frontend-dashboard/`)
 
-### Prerequisites
+```sh
+cd frontend-dashboard
+npm install
+```
 
-*   Node.js (v18 or later)
-*   Python (v3.9 or later)
-*   A Firebase project and an OpenAI API key.
+Create `.env.local` with your Firebase settings:
 
-### Installation
+```
+NEXT_PUBLIC_FIREBASE_API_KEY=YOUR_KEY
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=YOUR_DOMAIN
+NEXT_PUBLIC_FIREBASE_DATABASE_URL=YOUR_URL
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=YOUR_ID
+NEXT_PUBLIC_FLASK_API_URL=http://127.0.0.1:5000
+```
 
-1.  **Clone the repo**
-    ```sh
-    git clone https://github.com/sk1ban312/smart-solar-ecosystem.git
-    ```
-2.  **Setup the Frontend (`/frontend-dashboard`)**
-    *   Navigate to the frontend directory: `cd frontend-dashboard`
-    *   Install NPM packages: `npm install`
-    *   Create a `.env.local` file and add your Firebase credentials:
-      ```
-      NEXT_PUBLIC_FIREBASE_API_KEY=YOUR_KEY
-      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=YOUR_DOMAIN
-      NEXT_PUBLIC_FIREBASE_DATABASE_URL=YOUR_URL
-      NEXT_PUBLIC_FIREBASE_PROJECT_ID=YOUR_ID
-      NEXT_PUBLIC_FLASK_API_URL=http://127.0.0.1:5000
-      ```
-    *   Run the development server: `npm run dev`
+Then run `npm run dev`.
 
-3.  **Setup the Backend (`/backend-api`)**
-    *   Navigate to the backend directory: `cd backend-api`
-    *   Install Python packages: `pip install -r requirements.txt`
-    *   Set your OpenAI API key as an environment variable:
-      ```sh
-      # For macOS/Linux
-      export OPENAI_API_KEY='your_secret_key'
-      # For Windows
-      set OPENAI_API_KEY='your_secret_key'
-      ```
-    *   Run the Flask API: `flask run`
+**API** (`backend-api/`)
 
----
+```sh
+cd backend-api
+pip install -r requirements.txt
+export OPENAI_API_KEY='your_secret_key'
+flask run
+```
 
-## Contact & Team
+</details>
 
-This project was developed by the UET University Engineering Team.
+## Team
 
-**LinkedIn:** [www.linkedin.com/in/uet-university-engineering-team-aa9005392](https://www.linkedin.com/in/uet-university-engineering-team-aa9005392)
+Built by the [University Engineering Team](https://www.linkedin.com/in/uet-university-engineering-team-aa9005392). Project Lead: [Mykyta Skyba](https://www.linkedin.com/in/m-skyba).
