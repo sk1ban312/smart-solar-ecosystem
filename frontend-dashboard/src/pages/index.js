@@ -1,199 +1,206 @@
-// File: frontend-dashboard/src/pages/index.js
-import { useState, useEffect } from 'react';
-import Layout from '../components/Layout';
-import { database, ref, onValue, query, limitToLast } from '../firebase';
+// Dashboard: the station right now, today's output, weather and the AI forecast
+import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { FaBatteryFull, FaChartLine, FaSun } from 'react-icons/fa';
-import { WiDaySunny, WiThermometer, WiCloudy, WiStrongWind } from 'react-icons/wi';
-import { useTemperature } from '../context/TemperatureContext'; // Import the hook
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceDot } from 'recharts';
+import { FaSun, FaSolarPanel, FaBatteryThreeQuarters, FaBolt, FaMagic } from 'react-icons/fa';
+import Layout from '../components/Layout';
+import { useStation } from '../context/StationContext';
+import { useTemperature } from '../context/TemperatureContext';
+import { batterySOC, dayKey, energyWh, formatHour, hourOf, temp } from '../lib/solar';
 
 const FLASK_API_URL = process.env.NEXT_PUBLIC_FLASK_API_URL;
+const SELF_USE_WH = 20; // the forecast subtracts about 20 Wh the system uses itself (same as the API)
 
-const getBatterySOC = (voltage) => {
-    const voltageMap = [ { v: 11.6, soc: 0 }, { v: 11.8, soc: 20 }, { v: 12.1, soc: 40 }, { v: 12.2, soc: 50 }, { v: 12.4, soc: 70 }, { v: 12.7, soc: 100 } ];
-    if (voltage >= voltageMap[voltageMap.length - 1].v) return 100;
-    if (voltage <= voltageMap[0].v) return 0;
-    for (let i = 1; i < voltageMap.length; i++) {
-        if (voltage < voltageMap[i].v) {
-            const lower = voltageMap[i - 1]; const upper = voltageMap[i]; const voltageRange = upper.v - lower.v; const socRange = upper.soc - lower.soc; const voltagePosition = voltage - lower.v; const soc = lower.soc + (voltagePosition / voltageRange) * socRange; return Math.min(100, Math.max(0, soc));
-        }
-    }
-    return 0;
-};
+const hourTick = (h) => `${((h + 11) % 12) + 1} ${h < 12 ? 'AM' : 'PM'}`;
 
-// Celsius to Fahrenheit conversion function
-const celsiusToFahrenheit = (c) => (c * 9/5) + 32;
+function Tile({ icon, label, value, unit, note, accent, bar }) {
+  return (
+    <div className={`tile ${accent || ''}`}>
+      <div className="tile-label">{icon}{label}</div>
+      <div className="tile-value">{value}<span className="tile-unit">{unit}</span></div>
+      {typeof bar === 'number' && <div className="meter"><span style={{ width: `${Math.max(2, Math.min(100, bar))}%` }} /></div>}
+      {note && <div className="tile-note">{note}</div>}
+    </div>
+  );
+}
 
-export default function Dashboard() {
-  const [data, setData] = useState(null);
-  const [weather, setWeather] = useState(null);
-  const [aiState, setAiState] = useState({ loading: false, report: null, error: null });
-  const { tempUnit } = useTemperature(); // Get the current unit from context
+function TodayChart({ rows, peakW }) {
+  const data = rows.map((r) => ({ h: hourOf(r.timestamp), p: r.dc_power_w || 0 })).filter((d) => d.h >= 5 && d.h <= 20);
+  const last = data[data.length - 1];
+  const step = peakW <= 6 ? 2 : peakW <= 12 ? 3 : 5;
+  const maxW = step * Math.ceil((peakW + 0.5) / step);
+  const yTicks = Array.from({ length: maxW / step + 1 }, (_, i) => i * step);
+  return (
+    <div className="chart">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id="sunFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#f2a93b" stopOpacity={0.45} />
+              <stop offset="100%" stopColor="#f2a93b" stopOpacity={0.03} />
+            </linearGradient>
+          </defs>
+          <XAxis type="number" dataKey="h" domain={[5, 20]} ticks={[6, 8, 10, 12, 14, 16, 18, 20]} tickFormatter={hourTick}
+            stroke="#8a94a3" fontSize={12} tickLine={false} axisLine={{ stroke: '#e4e9f0' }} />
+          <YAxis domain={[0, maxW]} ticks={yTicks} stroke="#8a94a3" fontSize={12} tickLine={false} axisLine={false} width={48}
+            tickFormatter={(v) => `${v} W`} />
+          <Tooltip labelFormatter={(h) => formatHour(h)} formatter={(v) => [`${v.toFixed(1)} W`, 'Panel power']}
+            contentStyle={{ borderRadius: 10, border: '1px solid #e4e9f0', fontSize: 13 }} />
+          <Area type="monotone" dataKey="p" stroke="#e8962a" strokeWidth={2.4} fill="url(#sunFill)" isAnimationActive={false} />
+          {last && <ReferenceDot x={last.h} y={last.p} r={5} fill="#e8962a" stroke="#fff" strokeWidth={2} />}
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
 
+function useWeather(mode) {
+  const [state, setState] = useState({ loading: true, data: null });
   useEffect(() => {
-    const q = query(ref(database, 'solar_telemetry'), limitToLast(1));
-    const unsubscribe = onValue(q, (snapshot) => {
-      const val = snapshot.val();
-      if (val) {
-        const latest = Object.values(val)[0];
-        latest.battery_soc_perc = getBatterySOC(latest.dc_voltage_v);
-        setData(latest);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    const fetchWeather = async () => {
-        try {
-            const res = await axios.get(`${FLASK_API_URL}/weather`);
-            setWeather(res.data);
-        } catch (error) { console.error("Failed to fetch weather:", error); setWeather(null); }
+    if (mode !== 'live') return undefined;
+    let alive = true;
+    const load = async () => {
+      if (!FLASK_API_URL) { setState({ loading: false, data: null }); return; }
+      try {
+        const res = await axios.get(`${FLASK_API_URL}/weather`, { timeout: 8000 });
+        const o = res.data?.current_observation;
+        if (alive) setState({ loading: false, data: o ? { text: o.textDescription, tempC: o.temperature?.value, windKmh: o.windSpeed?.value } : null });
+      } catch (e) { if (alive) setState({ loading: false, data: null }); }
     };
-    fetchWeather();
-    const interval = setInterval(fetchWeather, 15 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
+    load();
+    const id = setInterval(load, 15 * 60 * 1000);
+    return () => { alive = false; clearInterval(id); };
+  }, [mode]);
+  if (mode === 'demo') return { loading: false, sample: true, data: { text: 'Mostly sunny', tempC: 14.2, windKmh: 9.4 } };
+  return state;
+}
 
-  const runAnalysis = async () => {
-    setAiState({ loading: true, report: null, error: null });
+function WeatherCard({ mode }) {
+  const { tempUnit } = useTemperature();
+  const w = useWeather(mode);
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>Weather in Washington, DC</h2>
+        {w.sample && <span className="badge">Sample</span>}
+      </div>
+      {w.data ? (
+        <dl className="rows">
+          <div><dt>Conditions</dt><dd>{w.data.text || '–'}</dd></div>
+          <div><dt>Air temperature</dt><dd>{temp(w.data.tempC, tempUnit)} °{tempUnit}</dd></div>
+          <div><dt>Wind</dt><dd>{typeof w.data.windKmh === 'number' ? w.data.windKmh.toFixed(1) : '–'} km/h</dd></div>
+        </dl>
+      ) : (
+        <p className="muted">{w.loading ? 'Loading the weather...' : 'The weather server is offline right now.'}</p>
+      )}
+    </div>
+  );
+}
+
+function ForecastCard({ mode, fullDemoDay }) {
+  const [state, setState] = useState({ loading: false, result: null, error: null });
+  useEffect(() => { setState({ loading: false, result: null, error: null }); }, [mode]);
+
+  const run = async () => {
+    setState({ loading: true, result: null, error: null });
+    if (mode === 'demo') {
+      const total = energyWh(fullDemoDay);
+      setTimeout(() => setState({ loading: false, error: null, result: {
+        sample: true, total, net: total - SELF_USE_WH,
+        report: `Mostly sunny skies and light winds are expected for the rest of the day. The panel should produce about ${total.toFixed(0)} Wh, and after about ${SELF_USE_WH} Wh used by the system itself the battery gains about ${(total - SELF_USE_WH).toFixed(0)} Wh.`,
+      } }), 700);
+      return;
+    }
     try {
-      const res = await axios.post(`${FLASK_API_URL}/analyze`);
+      if (!FLASK_API_URL) throw new Error('no api');
+      const res = await axios.post(`${FLASK_API_URL}/analyze`, null, { timeout: 20000 });
       const { report, prediction } = res.data;
-      setAiState({
-        loading: false,
-        report: { report: report, prediction: { final_soc: prediction.final_soc.toFixed(1), total_wh: prediction.total_wh.toFixed(1), net_wh_gain: (prediction.net_wh_gain || 0).toFixed(1) }},
-        error: null
-      });
-    } catch (err) {
-      console.error(err);
-      setAiState({ loading: false, report: null, error: "Analysis failed. Ensure Flask API is running." });
+      setState({ loading: false, error: null, result: { total: prediction.total_wh, net: prediction.net_wh_gain || 0, report } });
+    } catch (e) {
+      setState({ loading: false, result: null, error: 'The forecast server is offline right now.' });
     }
   };
 
+  const r = state.result;
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>AI forecast for today</h2>
+        {r?.sample && <span className="badge">Sample output</span>}
+      </div>
+      <p className="muted small">Reads the weather forecast and estimates how much energy the panel will make today.</p>
+      {r && (
+        <div className="forecast">
+          <div><span className="tile-label">Expected energy</span><b>{r.total.toFixed(1)} <small>Wh</small></b></div>
+          <div><span className="tile-label">Battery gain</span><b className={r.net >= 0 ? 'pos' : 'neg'}>{r.net > 0 ? '+' : ''}{r.net.toFixed(1)} <small>Wh</small></b></div>
+        </div>
+      )}
+      {r && <p className="report">{r.report}</p>}
+      {state.error && <p className="error">{state.error}</p>}
+      <button type="button" className="btn" onClick={run} disabled={state.loading}>
+        <FaMagic /> {state.loading ? 'Thinking...' : r ? 'Run again' : 'Run the forecast'}
+      </button>
+    </div>
+  );
+}
 
-  if (!data) return <Layout><div style={{textAlign:'center', marginTop:'100_px', color:'var(--text-secondary)'}}><h1>Awaiting Sensor Data...</h1></div></Layout>;
+export default function Dashboard() {
+  const { mode, rows, current, fresh, fullDemoDay } = useStation();
+  const { tempUnit } = useTemperature();
 
-  const socColor = data.battery_soc_perc > 30 ? 'color-green' : 'color-red';
-  const batteryFillColor = data.battery_soc_perc > 30 ? 'var(--accent-green)' : 'var(--accent-red)';
-  const weatherObs = weather?.current_observation;
+  if (!mode || !current) {
+    return (
+      <Layout title="Dashboard">
+        <div className="page-head"><h1>Station overview</h1><p className="muted">Connecting to the station...</p></div>
+        <div className="card skeleton" />
+      </Layout>
+    );
+  }
+
+  const day = dayKey(current.timestamp);
+  const isToday = day === dayKey(Date.now() / 1000);
+  const dayRows = rows.filter((r) => dayKey(r.timestamp) === day);
+  const dayWh = energyWh(dayRows);
+  const peak = Math.max(0, ...dayRows.map((r) => r.dc_power_w || 0));
+  const fullPeak = mode === 'demo' ? Math.max(...fullDemoDay.map((r) => r.dc_power_w)) : peak;
+  const soc = batterySOC(current.dc_voltage_v);
+  const when = new Date(current.timestamp * 1000);
+
+  const status = mode === 'demo'
+    ? 'Demo replay with sample data.'
+    : fresh ? `Live. Last reading at ${when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`
+      : `Offline. Last reading on ${when.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}.`;
 
   return (
-    <Layout title="System Overview">
-      <div style={{ textAlign: 'center', paddingTop: '50px', paddingBottom: '70px' }}>
-        <h1 style={{ fontSize: '56px', fontWeight: 600 }}>Solar Energy System</h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '24px', marginTop: '8px' }}>
-          Last Measurement: {new Date(data.timestamp * 1000).toLocaleString()}
-        </p>
+    <Layout title="Dashboard">
+      <div className="page-head">
+        <h1>Station overview</h1>
+        <p className="muted">A 20 W off-grid solar station in Washington, DC that measures itself and reports to the cloud. {status}</p>
       </div>
 
-      <div className="grid">
-        <div className="col-6" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* Battery SOC Card */}
-          <div className="card">
-            <div style={{display:'flex', flexDirection:'row', alignItems:'center', justifyContent:'space-between'}}>
-              <div>
-                <div className="label"><FaBatteryFull className="icon-small" /> Battery SOC</div>
-                <div className={`metric-hero ${socColor}`}>
-                  {data.battery_soc_perc.toFixed(1)}<span className="unit-hero">%</span>
-                </div>
-              </div>
-              <div style={{width:'80px', height:'40px', border:`2px solid var(--border-color)`, borderRadius:'6px', position:'relative', padding:'3px'}}>
-                <div style={{
-                    width: `${data.battery_soc_perc}%`, height:'100%',
-                    background: batteryFillColor, borderRadius:'2px', transition:'width 0.5s'
-                }}></div>
-                <div style={{ width:'5px', height:'16px', background: 'var(--border-color)', position:'absolute', right:'-8px', top:'10px', borderRadius:'0 3px 3px 0' }}></div>
-              </div>
-            </div>
-          </div>
-          {/* Panel Power Output Card */}
-          <div className="card">
-            <div className="label"><FaSun className="icon-small" /> Panel Power Output</div>
-            <div className={`metric-hero ${data.dc_power_w > 0 ? 'color-green' : ''}`}>
-                {data.dc_power_w.toFixed(1)}<span className="unit-hero">W</span>
-            </div>
-            <p style={{fontSize:'14px', color:'var(--text-secondary)', margin:'10px 0 0 0'}}>
-                {data.dc_voltage_v.toFixed(2)}V at {data.dc_current_ma.toFixed(0)}mA
-            </p>
-          </div>
-          {/* Sensor Telemetry Card */}
-          <div className="card">
-            <h2>Sensor Telemetry</h2>
-            <div className="data-row">
-              <span className="data-key"><WiDaySunny className="icon-small"/> Sunlight</span>
-              <span className="data-val">{data.sunlight_lux.toLocaleString()} Lux</span>
-            </div>
-            <div className="data-row">
-              <span className="data-key"><WiThermometer className="icon-small"/> Panel Temp</span>
-              <span className="data-val">
-                {tempUnit === 'C' ? data.panel_temp_c.toFixed(1) : celsiusToFahrenheit(data.panel_temp_c).toFixed(1)} °{tempUnit}
-              </span>
-            </div>
-            <div className="data-row">
-              <span className="data-key" style={{paddingLeft: '26px'}}>Bus Voltage</span>
-              <span className="data-val">{data.dc_voltage_v.toFixed(2)} V</span>
-            </div>
-          </div>
-        </div>
+      <section className="tiles">
+        <Tile icon={<FaSolarPanel />} label="Panel power" value={(current.dc_power_w || 0).toFixed(1)} unit="W" accent="amber"
+          note={`${(current.dc_voltage_v || 0).toFixed(2)} V at ${(current.dc_current_ma || 0).toFixed(0)} mA`} />
+        <Tile icon={<FaBatteryThreeQuarters />} label="Battery charge" value={soc.toFixed(0)} unit="%" bar={soc}
+          accent={soc > 30 ? 'green' : 'red'} note="12 V, 8 Ah lead-acid" />
+        <Tile icon={<FaBolt />} label={isToday ? 'Energy today' : 'Energy that day'} value={dayWh.toFixed(1)} unit="Wh"
+          note={`Peak ${peak.toFixed(1)} W`} />
+        <Tile icon={<FaSun />} label="Sunlight" value={((current.sunlight_lux || 0) / 1000).toFixed(1)} unit="klux"
+          note={`Panel at ${temp(current.panel_temp_c, tempUnit)} °${tempUnit}`} />
+      </section>
 
-        <div className="col-6" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* Washington DC Weather Card */}
-          <div className="card">
-            <h2>Washington DC Weather</h2>
-            {weatherObs ? (
-              <>
-                <div className="data-row"><span className="data-key"><WiCloudy className="icon-small"/> Conditions</span><span className="data-val">{weatherObs.textDescription}</span></div>
-                <div className="data-row">
-                    <span className="data-key"><WiThermometer className="icon-small"/> Temperature</span>
-                    <span className="data-val">
-                      {(weatherObs.temperature.value !== null) ? (
-                        tempUnit === 'C' ? weatherObs.temperature.value.toFixed(1) : celsiusToFahrenheit(weatherObs.temperature.value).toFixed(1)
-                      ) : 'N/A'} °{tempUnit}
-                    </span>
-                </div>
-                <div className="data-row">
-                    <span className="data-key"><WiStrongWind className="icon-small"/> Wind Speed</span>
-                    <span className="data-val">{(weatherObs.windSpeed.value ?? 0).toFixed(1)} km/h</span>
-                </div>
-              </>
-            ) : ( <p className="color-red" style={{fontSize:'14px'}}>Weather data loading or API call failed.</p> )}
-          </div>
-
-          {/* System Intelligence Card */}
-          <div className="card" style={{flexGrow: 1}}>
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px'}}>
-              <h2 style={{margin:0}}>System Intelligence</h2>
-              <button className="btn" onClick={runAnalysis} disabled={aiState.loading}>
-                {aiState.loading ? 'Analyzing...' : <><FaChartLine style={{marginRight: '8px'}} />Run Prediction</>}
-              </button>
-            </div>
-            {aiState.error && <div className="ai-report" style={{color: 'var(--accent-red)', background:'#FFF5F5'}}>{aiState.error}</div>}
-            {aiState.report && (
-              <div>
-                <div style={{display:'flex', textAlign: 'center', background: '#FFFFFF', border: '1px solid var(--border-color)', padding: '16px 0', borderRadius: '12px'}}>
-                  <div style={{flexGrow:1, borderRight:'1px solid var(--border-color)'}}>
-                    <div className="label">Expected Energy</div>
-                    <div className="ai-report-prediction-value color-blue">{aiState.report.prediction.total_wh} <span style={{fontSize:'14px'}}>Wh</span></div>
-                  </div>
-                  <div style={{flexGrow:1}}>
-                    <div className="label">Net Energy Gain</div>
-                    <div className={`ai-report-prediction-value ${aiState.report.prediction.net_wh_gain >= 0 ? 'color-green' : 'color-red'}`}>
-                        {aiState.report.prediction.net_wh_gain > 0 ? '+' : ''}{aiState.report.prediction.net_wh_gain} <span style={{fontSize:'14px'}}>Wh</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="ai-report">{aiState.report.report}</div>
-              </div>
-            )}
-            {!aiState.report && !aiState.loading && !aiState.error && (
-              <div style={{color:'var(--text-secondary)', fontSize:'14px', textAlign:'center', marginTop:'20px', padding:'20px'}}>
-                Click "Run Prediction" for a forward-looking analysis based on today's weather.
-              </div>
-            )}
-          </div>
+      <section className="card">
+        <div className="card-head">
+          <h2>{isToday ? "Today's output" : `Output on ${when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}</h2>
+          <span className="muted small">Panel power through the day</span>
         </div>
-      </div>
+        {dayRows.length > 1 ? <TodayChart rows={dayRows} peakW={Math.max(4, fullPeak)} /> : <p className="muted">No readings for this day yet.</p>}
+      </section>
+
+      <section className="split">
+        <WeatherCard mode={mode} />
+        <ForecastCard mode={mode} fullDemoDay={fullDemoDay} />
+      </section>
     </Layout>
   );
 }
